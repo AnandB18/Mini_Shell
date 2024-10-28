@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 /**
  * Each command corresponds to either a program (in the `PATH`
@@ -125,9 +126,11 @@ msh_sequence_parse(char *str, struct msh_sequence *seq)
 
 		//printf("pipe before parsed: %s\n", pipe);
 		err = msh_pipeline_parse(pipe, seq->pipe_array[i]);
-		if (err != 0) {
-			return err;
+		
+		/*if (err != 0) {
+			break;
 		}
+		*/
 		i++;
 	}
 	
@@ -138,8 +141,28 @@ msh_sequence_parse(char *str, struct msh_sequence *seq)
 msh_err_t 
 msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	msh_err_t err = 0;
+	int i = 0;
 	//printf("pipeline: %s\n", p->pipeline);
 	//printf("pipeline parameter: %s\n", pipe);
+
+	while(isspace(pipe[i]) != 0) {
+		i++;
+	}
+	if(pipe[i] == '|') {
+		err = MSH_ERR_PIPE_MISSING_CMD;
+		return err;
+	}
+
+	i = strlen(pipe) -1;
+	while(isspace(pipe[i]) != 0) {
+		i--;
+	}
+	if(pipe[i] == '|') {
+		err = MSH_ERR_PIPE_MISSING_CMD;
+		return err;
+	}
+
+
 	char* pipe_cpy = strdup(pipe);
 	char *cmd, *ptr;
 
@@ -149,6 +172,11 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	
     for (cmd = strtok_r(pipe_cpy, "|", &ptr); cmd != NULL; cmd = strtok_r(ptr, "|", &ptr))
     {
+		if(p->num_commands >= MSH_MAXCMNDS) {
+			err = MSH_ERR_TOO_MANY_CMDS;
+			break;
+			//return -7;
+		}
 		
 		p->array_command[p->num_commands] = (struct msh_command*)malloc(sizeof(struct msh_command));
 		p->array_command[p->num_commands]->cmd_string = strdup(cmd);
@@ -161,19 +189,20 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		
 		//printf("command before parsed: %s\n", cmd);
 		err = msh_command_parse(cmd, p->array_command[p->num_commands]);
-		if (err != 0) {
-			return err;
+		/*if (err != 0) {
+			break;
 		}
+		*/
 
 		p->num_commands++;
-		if(p->num_commands > MSH_MAXCMNDS) {
-			return -1;
-		}
     }
-
-	p->array_command[p->num_commands - 1]->last_command = 1;
+	if(err != 0) {
+		free(pipe_cpy);
+		return err;
+	}
 	//p->array_command[p->num_commands] = NULL;
 
+	p->array_command[p->num_commands - 1]->last_command = 1;
 	free(pipe_cpy);
 	return err;
 }
@@ -182,25 +211,27 @@ msh_err_t
 msh_command_parse(char *cmd, struct msh_command *c) {
 	//printf("command: %s\n", c->cmd_string);
 	//printf("command parameter: %s\n", cmd);
+	int err = 0;
 	char* cmd_cpy = strdup(cmd);
 	char *arg, *ptr;
 	
 	for (arg = strtok_r(cmd_cpy, " ", &ptr); arg != NULL; arg = strtok_r(ptr, " ", &ptr)) 
 	{
-		
+		if(c->num_args >= MSH_MAXARGS) {
+			err = MSH_ERR_TOO_MANY_ARGS;
+			break;
+		}
+
 		c->array_arg[c->num_args] = strdup(arg);
 		//printf("arg: %s\n", c->array_arg[c->num_args]);
 		c->num_args++;
 
-		if(c->num_args > MSH_MAXARGS) {
-			return -1;
-		}
     }
 
 	//c->array_arg[c->num_args] = NULL;
 
 	free(cmd_cpy);
-	return 0;
+	return err;
 }
 
 struct msh_pipeline *

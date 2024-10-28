@@ -54,7 +54,7 @@ typedef enum {
 	MSH_ERR_MISUSED_BACKGROUND = -3,
 	/* pipeline has a redirection *without* a file to redirect to. */
 	MSH_ERR_NO_REDIR_FILE = -4,
-	/* pipeline processes ran out of memory */ /*m0*/
+	/* pipeline processes ran out of memory */
 	MSH_ERR_NOMEM = -5,
 	/* More than MSH_MAXARGS passed to a command */ /*m0*/
 	MSH_ERR_TOO_MANY_ARGS = -6,
