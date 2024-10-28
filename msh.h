@@ -14,6 +14,9 @@
  * to move on an execute the next pipeline.
  */
 struct msh_sequence;
+	//array of sequences: dynamically alloc
+		//Need two astrics cause array of pointers
+	//size of the number of pipelines
 
 /**
  * A pipeline is a sequence of commands, separated by "|"s. The output
@@ -21,6 +24,10 @@ struct msh_sequence;
  * the next (after the "|").
  */
 struct msh_pipeline;
+	//array of commands: don't dynamically alloc
+	//num commands counter
+	//just the string consisting of the pipeline
+	//(for M2): int background: This is a boolean flag
 
 /**
  * Each command corresponds to either a program (in the `PATH`
@@ -28,6 +35,11 @@ struct msh_pipeline;
  * `cd`. Commands are passed arguments.
  */
 struct msh_command;
+	//array of arguments: don't dynamically allocate
+		//one star
+	//num args
+	//cmd_string
+	//final: boolean flag that says yes or no if cmd is the final cmd of pipeline
 
 /**
  * `msh_err_t` are the standard errors returned by many functions in
@@ -42,13 +54,13 @@ typedef enum {
 	MSH_ERR_MISUSED_BACKGROUND = -3,
 	/* pipeline has a redirection *without* a file to redirect to. */
 	MSH_ERR_NO_REDIR_FILE = -4,
-	/* pipeline processes ran out of memory */
+	/* pipeline processes ran out of memory */ /*m0*/
 	MSH_ERR_NOMEM = -5,
-	/* More than MSH_MAXARGS passed to a command */
+	/* More than MSH_MAXARGS passed to a command */ /*m0*/
 	MSH_ERR_TOO_MANY_ARGS = -6,
-	/* More than MSH_MAXCMNDS in a pipeline */
+	/* More than MSH_MAXCMNDS in a pipeline */ /*m0*/
 	MSH_ERR_TOO_MANY_CMDS = -7,
-	/* Pipe either does not have a preceding command or a following command */
+	/* Pipe either does not have a preceding command or a following command */ /*m0*/
 	MSH_ERR_PIPE_MISSING_CMD = -8,
 	/* Could not execute program in command */
 	MSH_ERR_NO_EXEC_PROG = -9,

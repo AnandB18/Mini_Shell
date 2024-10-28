@@ -28,6 +28,10 @@ struct msh_sequence *msh_sequence_alloc(void);
  */
 msh_err_t msh_sequence_parse(char *str, struct msh_sequence *s);
 
+msh_err_t msh_pipeline_parse(char *pipe, struct msh_pipeline *p);
+
+msh_err_t msh_command_parse(char *cmd, struct msh_command *c);
+
 /**
  * `msh_sequence_free` deallocates the entire sequence, including all
  * constituent pipelines and commands. However, pipelines that have
