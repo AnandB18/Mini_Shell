@@ -102,7 +102,7 @@ msh_execute(struct msh_pipeline *p)
                 	close(pipes[1][0]);  //TODO: close the read end after redirection
 
 					for (int j = 0; j < n - 1; j++) {
-                    	if (j != i && j != i - 1) {  // Ensure only the necessary pipes are open
+                    	if (j != i && j != i - 1) { 
                         	close(pipes[j][0]);
                         	close(pipes[j][1]);
                     	}
