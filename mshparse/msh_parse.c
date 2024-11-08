@@ -54,6 +54,7 @@ msh_command_free(struct msh_command *c)
 void
 msh_pipeline_free(struct msh_pipeline *p)
 {
+	
 	for (int i = 0; i < p->num_commands; i++) {
 		msh_command_free(p->array_command[i]);
 	}
@@ -64,6 +65,7 @@ msh_pipeline_free(struct msh_pipeline *p)
 void
 msh_sequence_free(struct msh_sequence *s)
 {
+
 	for(int i = 0; i < s->num_pipelines; i++) {
 		msh_pipeline_free(s->pipe_array[i]);
 	}
@@ -154,6 +156,11 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	}
 
 	i = strlen(pipe) -1;
+
+	if(pipe[i] == '&') {
+		p->background = 1;
+	}
+	
 	while(isspace(pipe[i]) != 0) {
 		i--;
 	}
@@ -165,10 +172,6 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 
 	char* pipe_cpy = strdup(pipe);
 	char *cmd, *ptr;
-
-	if(strrchr(pipe, '&')){
-		p->background = 1;
-	}
 	
     for (cmd = strtok_r(pipe_cpy, "|", &ptr); cmd != NULL; cmd = strtok_r(ptr, "|", &ptr))
     {
@@ -227,7 +230,6 @@ msh_command_parse(char *cmd, struct msh_command *c) {
 		c->num_args++;
 
     }
-
 	//c->array_arg[c->num_args] = NULL;
 
 	free(cmd_cpy);
