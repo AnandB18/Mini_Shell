@@ -5,6 +5,7 @@ echo $INPUT | valgrind --leak-check=full --log-file="valgrind.out" ./msh > /dev/
 # Get how many errors valgrind reports
 NERRORS=`cat valgrind.out | grep "ERROR SUMMARY" | cut -d ' ' -f 4`
 if [ $NERRORS -ne 0 ]; then
+    cat valgrind.out;
     echo "Valgrind on $1: FAILURE"
 else
     echo "Valgrind on $1: SUCCESS"

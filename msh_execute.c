@@ -36,10 +36,29 @@ struct msh_pipeline {
 void
 msh_execute(struct msh_pipeline *p)
 {
+	/*
+	struct msh_command *c = msh_pipeline_command(p,0);
+	if(strcmp(msh_command_program(c), "cd")) {
+		if(strcmp(c->array_arg[1],"~") || c->array_arg[1] == NULL) {
+			chdir(getenv("HOME"));
+		}
+		else {
+			chdir(c->array_arg[1]);
+		}
+	}
 	
+	if(strcmp(msh_command_program(c), "exit")) {
+		exit(0);
+	}
+	*/
+	// ./msh
 	if(p->num_commands == 1) {
-		struct msh_command *cmd = msh_pipeline_command(p, 0);
-		execvp(msh_command_program(cmd), msh_command_args(cmd));
+		pid_t pid = fork();
+		if(pid == 0) {
+			struct msh_command *cmd = msh_pipeline_command(p, 0);
+			execvp(msh_command_program(cmd), msh_command_args(cmd));
+			free(cmd);
+		}
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
@@ -72,6 +91,7 @@ msh_execute(struct msh_pipeline *p)
 
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
+					free(cmd);
 
             	}
 
@@ -90,6 +110,7 @@ msh_execute(struct msh_pipeline *p)
                 	
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
+					free(cmd);
 					
             	}
 
@@ -110,6 +131,7 @@ msh_execute(struct msh_pipeline *p)
 
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
+					free(cmd);
             	}
 
             	exit(0);
@@ -127,9 +149,8 @@ msh_execute(struct msh_pipeline *p)
     	for (int i = 0; i < n; i++) {
         	waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
     	}
-
-	}
 	return;
+	}
 }
 
 void

@@ -239,13 +239,14 @@ msh_command_parse(char *cmd, struct msh_command *c) {
 struct msh_pipeline *
 msh_sequence_pipeline(struct msh_sequence *s)
 {
+	if(s->num_pipelines == 0) {
+		return NULL;
+	}
 	struct msh_pipeline* p = s->pipe_array[0];
 	
 	for(int i = 0; i < s->num_pipelines - 1; i++) {
 		s->pipe_array[i] = s->pipe_array[i + 1];
 	}
-
-	s->pipe_array[s->num_pipelines - 1] = NULL;
 
 	s->num_pipelines--;
 	

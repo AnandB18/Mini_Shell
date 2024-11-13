@@ -68,10 +68,9 @@ main(int argc, char *argv[])
 		/* dequeue pipelines and sequentially execute them */
 		while ((p = msh_sequence_pipeline(s)) != NULL) {
 			msh_execute(p);
+			msh_pipeline_free(p);
 		}
-
 		free(str);
-		//msh_pipeline_free(p);
 	}
 
 	msh_sequence_free(s);
