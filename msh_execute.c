@@ -36,9 +36,9 @@ struct msh_pipeline {
 void
 msh_execute(struct msh_pipeline *p)
 {
-	/*
+	
 	struct msh_command *c = msh_pipeline_command(p,0);
-	if(strcmp(msh_command_program(c), "cd")) {
+	if(strcmp(msh_command_program(c), "cd") == 0) {
 		if(strcmp(c->array_arg[1],"~") || c->array_arg[1] == NULL) {
 			chdir(getenv("HOME"));
 		}
@@ -47,10 +47,11 @@ msh_execute(struct msh_pipeline *p)
 		}
 	}
 	
-	if(strcmp(msh_command_program(c), "exit")) {
+	if(strcmp(msh_command_program(c), "exit") == 0) {
 		exit(0);
 	}
-	*/
+	
+
 	// ./msh
 	if(p->num_commands == 1) {
 		pid_t pid = fork();
