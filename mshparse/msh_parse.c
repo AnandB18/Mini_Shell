@@ -155,7 +155,7 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		return err;
 	}
 
-	i = strlen(pipe) -1;
+	i = strlen(pipe) - 1;
 
 	if(pipe[i] == '&') {
 		p->background = 1;

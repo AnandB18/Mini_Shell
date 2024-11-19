@@ -39,11 +39,13 @@ msh_execute(struct msh_pipeline *p)
 	
 	struct msh_command *c = msh_pipeline_command(p,0);
 	if(strcmp(msh_command_program(c), "cd") == 0) {
-		if(strcmp(c->array_arg[1],"~") || c->array_arg[1] == NULL) {
+		if(strcmp(c->array_arg[1],"~") == 0) {
 			chdir(getenv("HOME"));
+			return;
 		}
 		else {
 			chdir(c->array_arg[1]);
+			return;
 		}
 	}
 	
@@ -58,7 +60,7 @@ msh_execute(struct msh_pipeline *p)
 		if(pid == 0) {
 			struct msh_command *cmd = msh_pipeline_command(p, 0);
 			execvp(msh_command_program(cmd), msh_command_args(cmd));
-			free(cmd);
+			//free(cmd);
 		}
 	}
 	else {
@@ -92,7 +94,7 @@ msh_execute(struct msh_pipeline *p)
 
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
-					free(cmd);
+					//free(cmd);
 
             	}
 
@@ -111,7 +113,7 @@ msh_execute(struct msh_pipeline *p)
                 	
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
-					free(cmd);
+					//free(cmd);
 					
             	}
 
@@ -132,12 +134,13 @@ msh_execute(struct msh_pipeline *p)
 
 					struct msh_command *cmd = msh_pipeline_command(p, i);
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
-					free(cmd);
+					//free(cmd);
             	}
 
             	exit(0);
         	}
     	}
+
 
 
     	// Parent process: close all pipe ends
@@ -146,7 +149,7 @@ msh_execute(struct msh_pipeline *p)
         	close(pipes[i][1]);
     	}
 
-    	// Wait for all child processes to finish
+		// Wait for all child processes to finish
     	for (int i = 0; i < n; i++) {
         	waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
     	}
