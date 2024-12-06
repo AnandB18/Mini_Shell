@@ -14,7 +14,7 @@ msh_input(void)
 	char *line;
 
 	/* You can change this displayed string to whatever you'd like ;-) */
-	line = linenoise("msh > ");
+	line = linenoise("Anand's Shell> ");
 	if (line && strlen(line) == 0) {
 		free(line);
 

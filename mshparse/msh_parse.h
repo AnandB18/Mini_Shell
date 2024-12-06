@@ -184,5 +184,3 @@ void  msh_command_putdata(struct msh_command *c, void *data, msh_free_data_fn_t 
  *     borrowed by the client.
  */
 void *msh_command_getdata(struct msh_command *c);
-
-int msh_command_num(struct msh_pipeline *p);

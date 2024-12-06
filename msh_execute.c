@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <errno.h>
 
+#include <signal.h>
+
 /**
  * Each command corresponds to either a program (in the `PATH`
  * environment variable, see `echo $PATH`), or a builtin command like
@@ -32,11 +34,9 @@ struct msh_pipeline {
 	int background;
 };
 
-
 void
 msh_execute(struct msh_pipeline *p)
 {
-	
 	struct msh_command *c = msh_pipeline_command(p,0);
 	if(strcmp(msh_command_program(c), "cd") == 0) {
 		if(strcmp(c->array_arg[1],"~") == 0) {
@@ -62,6 +62,9 @@ msh_execute(struct msh_pipeline *p)
 			execvp(msh_command_program(cmd), msh_command_args(cmd));
 			//free(cmd);
 		}
+		
+		// Wait for child processes to finish
+    	waitpid(pid, NULL, 0);
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
@@ -136,42 +139,47 @@ msh_execute(struct msh_pipeline *p)
 					execvp(msh_command_program(cmd), msh_command_args(cmd));
 					//free(cmd);
             	}
-
-            	exit(0);
         	}
+			// Parent process: close all pipe ends
     	}
-
-
-
-    	// Parent process: close all pipe ends
-    	for (int i = 0; i < n - 1; i++) {
-        	close(pipes[i][0]);
-        	close(pipes[i][1]);
+		for (int i = 0; i < n - 1; i++) {
+        close(pipes[i][0]);
+    	close(pipes[i][1]);
     	}
 
 		// Wait for all child processes to finish
     	for (int i = 0; i < n; i++) {
         	waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
     	}
-	return;
+		return;
+	}
+}
+
+void 
+sig_handler(int signal) {
+	if(signal == SIGINT) {
+		printf("Shell Terminated\n");
+		fflush(stdout);
 	}
 }
 
 void
 msh_init(void)
 {
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = sig_handler;
+
+	sigemptyset(&sa.sa_mask);
+	//sigaddset(&masked, sa);
+
+	if(sigaction(SIGINT, &sa, NULL) == -1) {
+		perror("sigaction fialed");
+	}
+
+	if(sigaction(SIGTSTP, &sa, NULL) == -1) {
+		perror("sigaction failed");
+	}
 	return;
 }
 
-//helper function
-//fork_and_exec(cmd)
-	//fork
-	//if in child
-		//setup file class
-		//execvp
-
-//mshexec(pipeleine p)
-	//iterate through pipeline
-	
-
-	//fork.exec(c) 
