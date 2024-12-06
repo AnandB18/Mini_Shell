@@ -36,15 +36,63 @@ struct msh_pipeline {
 	int background;
 };
 
+struct jobs {
+	char* process;
+	pid_t id;
+	int background;
+};
+
 pid_t foreground_pid = -1; // Foreground process PIDs
+
 pid_t background[MSH_MAXBACKGROUND]; // Background process PIDs
 int bg_count = 0; // Counter for background processes
 
+struct jobs job_list[MSH_MAXBACKGROUND];
+int j_count = 0;
+
+
+void
+add_job(pid_t jpid, char* process) {
+	job_list[j_count].process = strdup(process);
+	job_list[j_count].id = jpid;
+	job_list[j_count].background = 1;
+
+	j_count++;
+	return;
+}
+
+void
+show_jobs(int id) {
+	if (id == -1) {
+		for(int i = 0; i < j_count; i++) {
+			printf("[%d] %s\n", i, job_list[i].process);
+		}
+		
+	}
+	else{
+		printf("[%d] %s", id, job_list[id].process);
+	
+	}
+}
+
+void
+remove_job(pid_t pid) {
+	for(int i = 0; i < j_count; i++) {
+		if(job_list[i].id == pid) {
+			for (int j = i; j < j_count - 1; j++) {
+				job_list[j] = job_list[j+1];
+			}
+			j_count--;
+			break;
+		}
+	}
+}
 
 void
 msh_execute(struct msh_pipeline *p)
 {
 	struct msh_command *c = msh_pipeline_command(p,0);
+
 	if(strcmp(msh_command_program(c), "cd") == 0) {
 		if(strcmp(c->array_arg[1],"~") == 0) {
 			chdir(getenv("HOME"));
@@ -59,26 +107,44 @@ msh_execute(struct msh_pipeline *p)
 	if(strcmp(msh_command_program(c), "exit") == 0) {
 		exit(0);
 	}
+
+	if(strcmp(msh_command_program(c), "jobs") == 0) {
+		show_jobs(-1);
+		return;
+	}
 	
 
 	// ./msh
 	if(p->num_commands == 1) {
 		pid_t pid = fork();
-		if(pid == 0) {
+
+		if(pid == 0) { 
+	
 			struct msh_command *cmd = msh_pipeline_command(p, 0);
+			/*for(int i = 0; i < MSH_MAXARGS; i ++) {
+				printf("these are the argumetns: %s\n", cmd->array_arg[i]);
+			}*/
+			//printf("this is program: %s\n", msh_command_program(cmd));
 			execvp(msh_command_program(cmd), msh_command_args(cmd));
+			exit(0);
 			//free(cmd);
+		}
+		else {
+			if(!(p->background)) {
+				foreground_pid = pid;
+			}
+			/*else {
+				background[bg_count] = pid;
+				bg_count++;
+				//add_job(pid,p->pipeline);
+			}*/
 		}
 
 		if(!(p->background)) {
-			foreground_pid = pid;
 			waitpid(pid, NULL, 0);
 			foreground_pid = -1;
 		}
-		else {
-			background[bg_count] = pid;
-			bg_count++;
-		}
+		return;
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
@@ -96,7 +162,6 @@ msh_execute(struct msh_pipeline *p)
     // Fork n child processes
     	for (int i = 0; i < n; i++) {
         	pids[i] = fork();
-
 
         	if (pids[i] == -1) {
             	perror("fork failed");
@@ -156,13 +221,15 @@ msh_execute(struct msh_pipeline *p)
 					//free(cmd);
             	}
         	}
-
-			if(!(p->background)) {
-				foreground_pid = pids[i];
-			}
 			else {
-				background[bg_count] = pids[i];
-				bg_count++;
+				if(!(p->background)) {
+					foreground_pid = pids[i];
+				}
+				else {
+					background[bg_count] = pids[i];
+					bg_count++;
+					add_job(pids[i],p->pipeline);
+				}
 			}
     	}
 
@@ -186,14 +253,31 @@ msh_execute(struct msh_pipeline *p)
 void 
 sig_handler(int signal) {
 	if(signal == SIGINT) {
-		printf("Terminated");
-		kill(foreground_pid, SIGTERM);
-		fflush(stdout);
+		if(foreground_pid != -1) {
+			kill(foreground_pid, SIGTERM);
+		}
 	}
 	else if(signal == SIGTSTP) {
 		background[bg_count] = foreground_pid;
 		bg_count++;
 		foreground_pid = -1;
+	}
+	else if(signal == SIGCHLD) {
+		pid_t pid;
+		int status;
+
+		while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+			for(int i = 0; i < bg_count; i++) {
+				if(background[i] == pid) {
+					for(int j = i; j < bg_count; j++) { 
+						background[j] = background[j+1];
+					}
+					bg_count--;
+					break;
+				}
+			}
+			remove_job(pid);
+		}
 	}
 }
 
@@ -214,6 +298,9 @@ msh_init(void)
 	if(sigaction(SIGTSTP, &sa, NULL) == -1) {
 		perror("sigaction failed");
 	}
+
+	if(sigaction(SIGCHLD, &sa, NULL) == -1) {
+		perror("sigaction failed");
+	}
 	return;
 }
-

@@ -179,6 +179,8 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 
 	pipe[i] = '\0';
 
+	printf("This is the pipe: %s\n", pipe);
+
 
 	char* pipe_cpy = strdup(pipe);
 	char *cmd, *ptr;

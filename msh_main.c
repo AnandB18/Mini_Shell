@@ -16,6 +16,7 @@ msh_input(void)
 	/* You can change this displayed string to whatever you'd like ;-) */
 	line = linenoise("Anand's Shell> ");
 	if (line && strlen(line) == 0) {
+		
 		free(line);
 
 		return NULL;
@@ -54,9 +55,12 @@ main(int argc, char *argv[])
 		char *str;
 		struct msh_pipeline *p;
 		msh_err_t err;
-
+		
 		str = msh_input();
-		if (!str) break; /* you must maintain this behavior: an empty command exits */
+		if (!str){
+			
+			break;
+		}  /* you must maintain this behavior: an empty command exits */
 
 		err = msh_sequence_parse(str, s);
 		if (err != 0) {
