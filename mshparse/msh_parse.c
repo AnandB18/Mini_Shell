@@ -143,31 +143,41 @@ msh_sequence_parse(char *str, struct msh_sequence *seq)
 msh_err_t 
 msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	msh_err_t err = 0;
-	int i = 0;
+	int start = 0;
+	int end = strlen(pipe) - 1;
+		 
 	//printf("pipeline: %s\n", p->pipeline);
 	//printf("pipeline parameter: %s\n", pipe);
 
-	while(isspace(pipe[i]) != 0) {
-		i++;
+	while(isspace(pipe[start]) != 0) {
+		start++;
 	}
-	if(pipe[i] == '|') {
+	if(pipe[start] == '|') {
 		err = MSH_ERR_PIPE_MISSING_CMD;
 		return err;
-	}
-
-	i = strlen(pipe) - 1;
-
-	if(pipe[i] == '&') {
-		p->background = 1;
 	}
 	
-	while(isspace(pipe[i]) != 0) {
-		i--;
+	while(isspace(pipe[end]) != 0) {
+		end--;
 	}
-	if(pipe[i] == '|') {
+	if(pipe[end] == '&') {
+		p->background = 1;
+		end--; 
+	}
+	if(pipe[end] == '|') {
 		err = MSH_ERR_PIPE_MISSING_CMD;
 		return err;
 	}
+
+	int i = 0;
+
+	while (start <= end) {
+		pipe[i] = pipe[start];
+		i++;
+		start++;
+	}
+
+	pipe[i] = '\0';
 
 
 	char* pipe_cpy = strdup(pipe);

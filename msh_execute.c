@@ -10,6 +10,8 @@
 
 #include <signal.h>
 
+//#define MAX_PROCESSES 128
+
 /**
  * Each command corresponds to either a program (in the `PATH`
  * environment variable, see `echo $PATH`), or a builtin command like
@@ -33,6 +35,11 @@ struct msh_pipeline {
 	int num_commands;
 	int background;
 };
+
+pid_t foreground_pid = -1; // Foreground process PIDs
+pid_t background[MSH_MAXBACKGROUND]; // Background process PIDs
+int bg_count = 0; // Counter for background processes
+
 
 void
 msh_execute(struct msh_pipeline *p)
@@ -62,9 +69,16 @@ msh_execute(struct msh_pipeline *p)
 			execvp(msh_command_program(cmd), msh_command_args(cmd));
 			//free(cmd);
 		}
-		
-		// Wait for child processes to finish
-    	waitpid(pid, NULL, 0);
+
+		if(!(p->background)) {
+			foreground_pid = pid;
+			waitpid(pid, NULL, 0);
+			foreground_pid = -1;
+		}
+		else {
+			background[bg_count] = pid;
+			bg_count++;
+		}
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
@@ -82,6 +96,8 @@ msh_execute(struct msh_pipeline *p)
     // Fork n child processes
     	for (int i = 0; i < n; i++) {
         	pids[i] = fork();
+
+
         	if (pids[i] == -1) {
             	perror("fork failed");
         	}
@@ -140,17 +156,29 @@ msh_execute(struct msh_pipeline *p)
 					//free(cmd);
             	}
         	}
-			// Parent process: close all pipe ends
+
+			if(!(p->background)) {
+				foreground_pid = pids[i];
+			}
+			else {
+				background[bg_count] = pids[i];
+				bg_count++;
+			}
     	}
+
+		// Parent process: close all pipe ends
 		for (int i = 0; i < n - 1; i++) {
-        close(pipes[i][0]);
-    	close(pipes[i][1]);
+        	close(pipes[i][0]);
+    		close(pipes[i][1]);
     	}
 
 		// Wait for all child processes to finish
-    	for (int i = 0; i < n; i++) {
-        	waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
-    	}
+		if(!(p->background)) {
+    		for (int i = 0; i < n; i++) {
+        		waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
+    		}
+			foreground_pid = -1;
+		}
 		return;
 	}
 }
@@ -158,8 +186,14 @@ msh_execute(struct msh_pipeline *p)
 void 
 sig_handler(int signal) {
 	if(signal == SIGINT) {
-		printf("Shell Terminated\n");
+		printf("Terminated");
+		kill(foreground_pid, SIGTERM);
 		fflush(stdout);
+	}
+	else if(signal == SIGTSTP) {
+		background[bg_count] = foreground_pid;
+		bg_count++;
+		foreground_pid = -1;
 	}
 }
 
