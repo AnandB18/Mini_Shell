@@ -44,7 +44,7 @@ struct jobs {
 };
 
 pid_t foreground_pid = -1; // Foreground process PIDs
-
+char* foreground_process;
 pid_t background[MSH_MAXBACKGROUND]; // Background process PIDs
 int bg_count = 0; // Counter for background processes
 
@@ -88,6 +88,24 @@ remove_job(pid_t pid) {
 		}
 	}
 }
+void
+get_job(int idx) {
+	pid_t pid = job_list[idx].id;
+	foreground_pid = pid;
+	printf("%s", job_list[idx].process);
+	job_list[idx].background = 0;
+
+	for(int i = 0; i < bg_count; i++) {
+		if(background[i] == pid) {
+			for(int j = i; j < bg_count; j++) { 
+				background[j] = background[j+1];
+			}
+			bg_count--;
+			break;
+		}
+	}
+	remove_job(pid);
+}
 
 void
 msh_execute(struct msh_pipeline *p)
@@ -116,6 +134,12 @@ msh_execute(struct msh_pipeline *p)
 		show_jobs(-1);
 		return;
 	}
+
+	if(strcmp(msh_command_program(c), "fg") == 0) {
+		int index = *c->array_arg[1] - '0';
+		get_job(index);
+		return;
+	}
 	
 
 	// ./msh
@@ -133,6 +157,7 @@ msh_execute(struct msh_pipeline *p)
 		else {
 			if(!(p->background)) {
 				foreground_pid = pid;
+				foreground_process = p->pipeline;
 			}
 			else {
 				background[bg_count] = pid;
@@ -144,6 +169,7 @@ msh_execute(struct msh_pipeline *p)
 		if(!(p->background)) {
 			waitpid(pid, NULL, 0);
 			foreground_pid = -1;
+			foreground_process = NULL;
 		}
 		else {
 			while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
@@ -241,6 +267,7 @@ msh_execute(struct msh_pipeline *p)
 			else {
 				if(!(p->background)) {
 					foreground_pid = pids[i];
+					foreground_process = p->pipeline;
 				}
 				else {
 					background[bg_count] = pids[i];
@@ -262,6 +289,7 @@ msh_execute(struct msh_pipeline *p)
         		waitpid(pids[i], NULL, 0);  // Wait for each child process to terminate
     		}
 			foreground_pid = -1;
+			foreground_process = NULL;
 		}
 		else {
 			while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
@@ -285,13 +313,15 @@ void
 sig_handler(int signal) {
 	if(signal == SIGINT) {
 		if(foreground_pid != -1) {
-			kill(foreground_pid, SIGINT);
+			kill(foreground_pid, SIGTERM);
 		}
 	}
 	else if(signal == SIGTSTP) {
 		background[bg_count] = foreground_pid;
 		bg_count++;
+		add_job(foreground_pid,foreground_process);
 		foreground_pid = -1;
+		foreground_process = NULL;
 	}
 	/*else if(signal == SIGCHLD) {
 		pid_t pid;
