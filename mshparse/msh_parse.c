@@ -163,24 +163,24 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	if(pipe[end] == '&') {
 		p->background = 1;
 		end--; 
+		while(isspace(pipe[end]) != 0) {
+			end--;
+		}
+		int i = 0;
+		while (start <= end) {
+			pipe[i] = pipe[start];
+			i++;
+			start++;
+		}
+		pipe[i] = '\0';
+		//printf("This is the pipe in parse: %s\n", pipe);
+		p->pipeline = strdup(pipe);
 	}
+
 	if(pipe[end] == '|') {
 		err = MSH_ERR_PIPE_MISSING_CMD;
 		return err;
 	}
-
-	int i = 0;
-
-	while (start <= end) {
-		pipe[i] = pipe[start];
-		i++;
-		start++;
-	}
-
-	pipe[i] = '\0';
-
-	printf("This is the pipe: %s\n", pipe);
-
 
 	char* pipe_cpy = strdup(pipe);
 	char *cmd, *ptr;

@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <signal.h>
 
@@ -92,6 +93,9 @@ void
 msh_execute(struct msh_pipeline *p)
 {
 	struct msh_command *c = msh_pipeline_command(p,0);
+	if (c == NULL || c->cmd_string == NULL || strlen(c->cmd_string) == 0) {
+        return;
+    }
 
 	if(strcmp(msh_command_program(c), "cd") == 0) {
 		if(strcmp(c->array_arg[1],"~") == 0) {
@@ -117,14 +121,11 @@ msh_execute(struct msh_pipeline *p)
 	// ./msh
 	if(p->num_commands == 1) {
 		pid_t pid = fork();
+		int status;
+		
 
-		if(pid == 0) { 
-	
+		if(pid == 0) {
 			struct msh_command *cmd = msh_pipeline_command(p, 0);
-			/*for(int i = 0; i < MSH_MAXARGS; i ++) {
-				printf("these are the argumetns: %s\n", cmd->array_arg[i]);
-			}*/
-			//printf("this is program: %s\n", msh_command_program(cmd));
 			execvp(msh_command_program(cmd), msh_command_args(cmd));
 			exit(0);
 			//free(cmd);
@@ -133,23 +134,39 @@ msh_execute(struct msh_pipeline *p)
 			if(!(p->background)) {
 				foreground_pid = pid;
 			}
-			/*else {
+			else {
 				background[bg_count] = pid;
 				bg_count++;
-				//add_job(pid,p->pipeline);
-			}*/
+				add_job(pid,p->pipeline);
+			}
 		}
 
 		if(!(p->background)) {
 			waitpid(pid, NULL, 0);
 			foreground_pid = -1;
 		}
+		else {
+			while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+				for(int i = 0; i < bg_count; i++) {
+					if(background[i] == pid) {
+						for(int j = i; j < bg_count; j++) { 
+							background[j] = background[j+1];
+						}
+						bg_count--;
+						break;
+					}
+				}	
+				remove_job(pid);
+			}
+		}
 		return;
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
     	int pipes[n-1][2];  // Array of pipes to connect processes (for n processes, we need n-1 pipes)
-    	pid_t pids[n];      // Array to store child process IDs
+    	pid_t pids[n]; 
+		pid_t pid;
+		int status;     // Array to store child process IDs
 
 
     // Create the n-1 pipes for the processes 
@@ -246,6 +263,20 @@ msh_execute(struct msh_pipeline *p)
     		}
 			foreground_pid = -1;
 		}
+		else {
+			while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+				for(int i = 0; i < bg_count; i++) {
+					if(background[i] == pid) {
+						for(int j = i; j < bg_count; j++) { 
+							background[j] = background[j+1];
+						}
+						bg_count--;
+						break;
+					}
+				}
+				remove_job(pid);
+			}
+		}
 		return;
 	}
 }
@@ -254,7 +285,7 @@ void
 sig_handler(int signal) {
 	if(signal == SIGINT) {
 		if(foreground_pid != -1) {
-			kill(foreground_pid, SIGTERM);
+			kill(foreground_pid, SIGINT);
 		}
 	}
 	else if(signal == SIGTSTP) {
@@ -262,7 +293,7 @@ sig_handler(int signal) {
 		bg_count++;
 		foreground_pid = -1;
 	}
-	else if(signal == SIGCHLD) {
+	/*else if(signal == SIGCHLD) {
 		pid_t pid;
 		int status;
 
@@ -278,7 +309,7 @@ sig_handler(int signal) {
 			}
 			remove_job(pid);
 		}
-	}
+	}*/
 }
 
 void
@@ -296,10 +327,6 @@ msh_init(void)
 	}
 
 	if(sigaction(SIGTSTP, &sa, NULL) == -1) {
-		perror("sigaction failed");
-	}
-
-	if(sigaction(SIGCHLD, &sa, NULL) == -1) {
 		perror("sigaction failed");
 	}
 	return;

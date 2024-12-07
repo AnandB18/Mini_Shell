@@ -57,8 +57,8 @@ main(int argc, char *argv[])
 		msh_err_t err;
 		
 		str = msh_input();
+		//printf("This is the input: %s", str);
 		if (!str){
-			
 			break;
 		}  /* you must maintain this behavior: an empty command exits */
 
