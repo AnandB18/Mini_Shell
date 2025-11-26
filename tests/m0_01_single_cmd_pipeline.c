@@ -32,7 +32,7 @@ mult_args(void)
 	SUNIT_ASSERT("hey command arg 4 in msh_command_args", args[4] == NULL);
 	SUNIT_ASSERT("hey command is final", msh_command_final(c));
 
-	msh_pipeline_free(p);
+	msh_pipeline_free(p);   
 	msh_sequence_free(s);
 
 	return SUNIT_SUCCESS;

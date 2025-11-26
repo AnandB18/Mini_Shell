@@ -35,7 +35,7 @@ struct msh_pipeline {
  * to move on an execute the next pipeline.
  */
 struct msh_sequence {
-	struct msh_pipeline** pipe_array;
+	struct msh_pipeline** pipe_array;  
 	int num_pipelines;
 	char* sequence;
 

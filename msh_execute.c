@@ -8,8 +8,8 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
-
 #include <signal.h>
+
 
 //#define MAX_PROCESSES 128
 
@@ -88,11 +88,12 @@ remove_job(pid_t pid) {
 		}
 	}
 }
+
 void
 get_job(int idx) {
 	pid_t pid = job_list[idx].id;
 	foreground_pid = pid;
-	printf("%s", job_list[idx].process);
+	//printf("%s", job_list[idx].process);
 	job_list[idx].background = 0;
 
 	for(int i = 0; i < bg_count; i++) {
@@ -116,10 +117,33 @@ msh_execute(struct msh_pipeline *p)
     }
 
 	if(strcmp(msh_command_program(c), "cd") == 0) {
-		if(strcmp(c->array_arg[1],"~") == 0) {
+        char * path = c->array_arg[1];
+		if(path == NULL) {
 			chdir(getenv("HOME"));
 			return;
 		}
+        if(path[0] == '~')
+        {
+			chdir(getenv("HOME"));
+
+            if(path[1] == '\0')
+            {
+                return;
+            }
+
+            if(path[1] == '/')
+            {
+                char * new_path = path + 2;
+                chdir(new_path);
+                return;
+            }
+        }
+        if(path[0] == '/')
+        {
+            char * new_path = path + 1;
+            chdir(new_path);
+            return;
+        }
 		else {
 			chdir(c->array_arg[1]);
 			return;
@@ -345,7 +369,7 @@ sig_handler(int signal) {
 void
 msh_init(void)
 {
-	struct sigaction sa;
+	struct sigaction sa; 
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_handler;
 
