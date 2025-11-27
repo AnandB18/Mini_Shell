@@ -109,6 +109,42 @@ get_job(int idx) {
 }
 
 void
+exec_cd(struct msh_command *c)
+{
+    char * path = c->array_arg[1];
+    char * home_dir = getenv("HOME");
+    int result = 0;
+
+    if(path == NULL) {
+        result = chdir(home_dir);
+    }
+    else if(strcmp(path,"~") == 0) {
+        result = chdir(home_dir);
+
+    }
+    else if(path[0] == '~' && path[1] == '/') {
+        int length = strlen(path + 1) + strlen(home_dir);
+        char * new_path = (char *)malloc(length + 1);
+        strcpy(new_path, home_dir);
+        strcat(new_path, path + 1);
+
+        result = chdir(new_path);
+
+        free(new_path);
+    }
+    else {
+        result = chdir(path);
+    }
+
+    if(result)
+    {
+        perror("failed cd");
+    }
+
+    return;
+}
+
+void
 msh_execute(struct msh_pipeline *p)
 {
 	struct msh_command *c = msh_pipeline_command(p,0);
@@ -117,37 +153,8 @@ msh_execute(struct msh_pipeline *p)
     }
 
 	if(strcmp(msh_command_program(c), "cd") == 0) {
-        char * path = c->array_arg[1];
-		if(path == NULL) {
-			chdir(getenv("HOME"));
-			return;
-		}
-        if(path[0] == '~')
-        {
-			chdir(getenv("HOME"));
-
-            if(path[1] == '\0')
-            {
-                return;
-            }
-
-            if(path[1] == '/')
-            {
-                char * new_path = path + 2;
-                chdir(new_path);
-                return;
-            }
-        }
-        if(path[0] == '/')
-        {
-            char * new_path = path + 1;
-            chdir(new_path);
-            return;
-        }
-		else {
-			chdir(c->array_arg[1]);
-			return;
-		}
+        exec_cd(c);
+        return;
 	}
 	
 	if(strcmp(msh_command_program(c), "exit") == 0) {
@@ -341,29 +348,15 @@ sig_handler(int signal) {
 		}
 	}
 	else if(signal == SIGTSTP) {
-		background[bg_count] = foreground_pid;
-		bg_count++;
-		add_job(foreground_pid,foreground_process);
-		foreground_pid = -1;
-		foreground_process = NULL;
+        if(foreground_pid != -1) {
+            background[bg_count] = foreground_pid;
+            bg_count++;
+            add_job(foreground_pid,foreground_process);
+            kill(foreground_pid, SIGTSTP);
+            foreground_pid = -1;
+            foreground_process = NULL;
+        }
 	}
-	/*else if(signal == SIGCHLD) {
-		pid_t pid;
-		int status;
-
-		while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-			for(int i = 0; i < bg_count; i++) {
-				if(background[i] == pid) {
-					for(int j = i; j < bg_count; j++) { 
-						background[j] = background[j+1];
-					}
-					bg_count--;
-					break;
-				}
-			}
-			remove_job(pid);
-		}
-	}*/
 }
 
 void
