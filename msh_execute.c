@@ -77,7 +77,6 @@ add_job(pid_t jpid, char* process) {
 	return idx;
 }
 
-
 void
 remove_job(pid_t pid) {
 	for(int i = 0; i < j_count; i++) {
@@ -178,8 +177,7 @@ msh_bg(int idx) {
 }
 
 void
-msh_cd(struct msh_command *c)
-{
+msh_cd(struct msh_command *c) {
     char * path = c->array_arg[1];
     char * home_dir = getenv("HOME");
     int result = 0;
@@ -214,10 +212,10 @@ msh_cd(struct msh_command *c)
 }
 
 void
-msh_execute(struct msh_pipeline *p)
-{
+msh_execute(struct msh_pipeline *p) {
 	struct msh_command *c = msh_pipeline_command(p,0);
-	if (c == NULL || c->cmd_string == NULL || strlen(c->cmd_string) == 0) {
+	
+    if (c == NULL || c->cmd_string == NULL || strlen(c->cmd_string) == 0) {
         return;
     }
 
@@ -307,7 +305,7 @@ msh_execute(struct msh_pipeline *p)
                 int status;
                 while(1) {
                     pid_t wait_pid = waitpid(pid, &status, 0);
-    
+                    fprintf(stderr, "[dbg] waitpid returned=%d errno=%d is_fg_active=%d\n", (int)wait_pid, errno, is_fg_active);
                     if (wait_pid == -1) {
                         if (errno == EINTR) {
     
@@ -334,15 +332,17 @@ msh_execute(struct msh_pipeline *p)
 	}
 	else {
 		int n = p->num_commands;  // The number of processes 
-    	int pipes[n-1][2];  // Array of pipes to connect processes (for n processes, we need n-1 pipes)
-    	pid_t pids[n]; 
+    	int pipes[MSH_MAXCMNDS-1][2];  // Array of pipes to connect processes (for n processes, we need n-1 pipes)
+    	pid_t pids[MSH_MAXCMNDS]; 
 
     // Create the n-1 pipes for the processes 
-    	for (int i = 0; i < n - 1; i++) {
-        	if (pipe(pipes[i]) == -1) {
-            	perror("pipe failed");
-        	}
- 		}
+        if (n > 1) {
+            for (int i = 0; i < n - 1; i++) {
+                if (pipe(pipes[i]) == -1) {
+                    perror("pipe failed");
+                }
+            }
+        }
 
     // Fork n child processes
     	for (int i = 0; i < n; i++) {
@@ -477,12 +477,16 @@ sig_handler(int signal) {
     }
 
     if (signal == SIGINT) {
+        fprintf(stderr, "[dbg] SIGINT: kill pid=%d\n", (int)foreground_pid);
         for (int i = 0; i < foreground_job.nprocs; i++) {
             kill(foreground_job.pids[i], SIGTERM);
         }
     }
     else if (signal == SIGTSTP) {
-        printf("SIGTSTP received\n");
+        fprintf(stderr, "[dbg] SIGTSTP: is_fg_active=%d nprocs=%d\n", is_fg_active, foreground_job.nprocs);
+        for (int i = 0; i < foreground_job.nprocs; i++) {
+            fprintf(stderr, "[dbg]   stop pid=%d\n", (int)foreground_job.pids[i]);
+        }
         for (int i = 0; i < foreground_job.nprocs; i++) {
             kill(foreground_job.pids[i], SIGTSTP);
         }
@@ -496,8 +500,10 @@ sig_handler(int signal) {
         int status;
         pid_t wait_pid = -1;
 
-        while(waitpid(-1, &status, WNOHANG) > 0) {
+        while((wait_pid = waitpid(-1, &status, WNOHANG)) > 0) {
+            fprintf(stderr, "[dbg] SIGCHLD reaped pid=%d\n", (int)wait_pid);
             int idx = get_job_idx(wait_pid);
+            fprintf(stderr, "[dbg]   idx=%d\n", idx);
             if (idx == -1) {
                 continue;
             }
