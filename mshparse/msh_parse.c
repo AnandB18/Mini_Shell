@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <fcntl.h>
+
 
 /**
  * Each command corresponds to either a program (in the `PATH`
@@ -26,6 +28,7 @@ struct msh_pipeline {
 	char* pipeline;
 	int num_commands;
 	int background;
+    pid_t pgid;
 };
 
 /**
