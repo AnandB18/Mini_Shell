@@ -520,6 +520,8 @@ sig_handler(int signal) {
 void
 msh_init(void)
 {
+    //pid_t shell_pgid = getpid();
+
 	struct sigaction sa; 
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_handler;
