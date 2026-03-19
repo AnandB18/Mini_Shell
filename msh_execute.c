@@ -24,6 +24,10 @@ struct msh_command{
 	int num_args;
 	char* cmd_string;  
 	int last_command;
+	int stdout_append;
+	int stderr_append;
+	char* stdout_file;
+	char* stderr_file;	
 };
 
 /**
@@ -68,31 +72,23 @@ int j_count = 0;
 
 int
 add_job(pid_t jpid, char* process) {
-    // fprintf(stderr, "[dbg] add_job: pid=%d process=\"%s\" j_count(before)=%d\n",
-    //     (int)jpid, process ? process : "(null)", j_count);
 	job_list[j_count].process = strdup(process);
 	job_list[j_count].id = jpid;
     job_list[j_count].status = JOB_RUNNING;
 
     int idx = j_count;
 	j_count++;
-    // fprintf(stderr, "[dbg] add_job: idx=%d j_count(after)=%d\n", idx, j_count);
 	return idx;
 }
 
 void
 remove_job(pid_t pid) {
-    // fprintf(stderr, "[dbg] remove_job: pid=%d j_count(before)=%d\n",
-    //     (int)pid, j_count);
 	for(int i = 0; i < j_count; i++) {
 		if(job_list[i].id == pid) {
-            // fprintf(stderr, "[dbg] remove_job: found at i=%d (cmd=%s)\n",
-            // i, job_list[i].process ? job_list[i].process : "(null)");
 			for (int j = i; j < j_count - 1; j++) {
 				job_list[j] = job_list[j+1];
 			}
 			j_count--;
-            // fprintf(stderr, "[dbg] remove_job: j_count(after)=%d\n", j_count);
 			break;
 		}
 	}
@@ -373,8 +369,6 @@ msh_execute(struct msh_pipeline *p) {
         int status;
         while(fg_jobs_left > 0) {
             pid_t wait_pid = waitpid(foreground_job.pids[0], &status, WUNTRACED);
-            // fprintf(stderr, "[dbg] fg pipe wait: waitpid returned=%d errno=%d is_fg_active=%d fg_left=%d\n",
-            //     (int)wait_pid, errno, is_fg_active, fg_jobs_left);
 
             if (wait_pid == -1) {
                 if (errno == EINTR) {
@@ -391,8 +385,6 @@ msh_execute(struct msh_pipeline *p) {
             }
             for (int i = 0; i < foreground_job.nprocs; i++) {
                 if (foreground_job.pids[i] == wait_pid) {
-                    // fprintf(stderr, "[dbg] fg pipe wait: matched pid=%d at i=%d, decrementing left.\n",
-                    //     (int)wait_pid, i);
                     foreground_job.pids[i] = -1;
                     fg_jobs_left--;
                     break;
@@ -407,24 +399,12 @@ msh_execute(struct msh_pipeline *p) {
 
 void 
 sig_handler(int signal) {
-    // fprintf(stderr, "[dbg] sig_handler enter signal=%d is_fg_active=%d j_count=%d fg_nprocs=%d fg_pid=%d\n",
-    //     signal, is_fg_active, j_count, foreground_job.nprocs, (int)foreground_pid);
-    // if (!is_fg_active) {
-    //     return;
-    // }
 
     if (signal == SIGINT) {
         if (!is_fg_active) {
             return;
         }
         
-        // fprintf(stderr, "[dbg] SIGINT: fg_pid=%d fg_nprocs=%d\n",
-        //     (int)foreground_pid, foreground_job.nprocs);
-        // fprintf(stderr, "[dbg] SIGINT will kill %d foreground PIDs\n", foreground_job.nprocs);
-        // for (int i = 0; i < foreground_job.nprocs; i++) {
-        //     // fprintf(stderr, "[dbg]   will kill pid=%d\n", (int)foreground_job.pids[i]);
-        // }
-
         for (int i = 0; i < foreground_job.nprocs; i++) {
             kill(foreground_job.pids[i], SIGTERM);
         }
@@ -435,34 +415,21 @@ sig_handler(int signal) {
         }
 
         for (int i = 0; i < foreground_job.nprocs; i++) {
-            // fprintf(stderr, "[dbg] SIGTSTP: fg_nprocs=%d\n", foreground_job.nprocs);
-            // for (int i = 0; i < foreground_job.nprocs; i++) {
-            //     // fprintf(stderr, "[dbg]   will stop pid=%d\n", (int)foreground_job.pids[i]);
-            // }
             kill(foreground_job.pids[i], SIGTSTP);
         }
 
         if (foreground_process != NULL) {
-            // fprintf(stderr, "[dbg] SIGTSTP: adding stopped job. repr_pid=%d cmd=\"%s\"\n",
-                //(int)foreground_job.pids[0], foreground_process ? foreground_process : "(null)");
             int idx = add_job(foreground_job.pids[0], foreground_process);
             job_list[idx].status = JOB_STOPPED;
-            // fprintf(stderr,
-                // "[dbg] SIGTSTP added job idx=%d pid=%d cmd=%s\n",
-                // idx, (int)foreground_job.pids[0], foreground_process);
         }
     }
     else if (signal == SIGCHLD) {
-        // fprintf(stderr, "[dbg] SIGCHLD: start j_count=%d\n", j_count);
         int status;
         pid_t wait_pid = -1;
 
         for (int i = 0; i < j_count; i++) {
             wait_pid = waitpid(job_list[i].id, &status, WNOHANG);
-            // fprintf(stderr, "[dbg] SIGCHLD: reaped pid=%d status=%d\n",
-            //     (int)wait_pid, status);
             if (wait_pid > 0) {
-                // fprintf(stderr, "[dbg] SIGCHLD: removing pid=%d\n", (int)wait_pid);
                 remove_job(wait_pid);
             }
         }

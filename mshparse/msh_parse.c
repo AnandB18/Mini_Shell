@@ -14,8 +14,12 @@
 struct msh_command{
 	char* array_arg[MSH_MAXARGS];
 	int num_args;
-	char* cmd_string;  
 	int last_command;
+	char* cmd_string;  
+	int stdout_append;
+	int stderr_append;
+	char* stdout_file;
+	char* stderr_file;	
 };
 
 /**
@@ -51,6 +55,8 @@ msh_command_free(struct msh_command *c)
 		free(c->array_arg[i]);
 	}
 	free(c->cmd_string);
+	free(c->stdout_file);
+	free(c->stderr_file);
 	free(c);
 }
 
@@ -81,14 +87,14 @@ struct msh_sequence *
 msh_sequence_alloc(void)
 {
 	struct msh_sequence* seq = (struct msh_sequence *)malloc(1 * sizeof(struct msh_sequence));
-	
-	seq->sequence = NULL;
-	seq->num_pipelines = 0;
-
 	if(seq == NULL) {
 		return NULL;
 	}
-	
+
+	seq->sequence = NULL;
+	seq->num_pipelines = 0;
+	seq->pipe_array = NULL;
+
 	return seq;
 }
 
@@ -111,7 +117,7 @@ msh_sequence_parse(char *str, struct msh_sequence *seq)
 		}	
 	}
 
-	seq->pipe_array = (struct msh_pipeline**)malloc((seq->num_pipelines) * sizeof(struct msh_pipeline));
+	seq->pipe_array = (struct msh_pipeline**)malloc((seq->num_pipelines) * sizeof(struct msh_pipeline *));
 	seq->sequence = strdup(str);
 
 	//printf("sequence: %s\n", seq->sequence);
@@ -177,6 +183,7 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		}
 		pipe[i] = '\0';
 		//printf("This is the pipe in parse: %s\n", pipe);
+		free(p->pipeline);
 		p->pipeline = strdup(pipe);
 	}
 
@@ -200,6 +207,10 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		p->array_command[p->num_commands]->cmd_string = strdup(cmd);
 		p->array_command[p->num_commands]->last_command = 0;
 		p->array_command[p->num_commands]->num_args = 0;
+		p->array_command[p->num_commands]->stdout_append = 0;
+		p->array_command[p->num_commands]->stderr_append = 0;
+		p->array_command[p->num_commands]->stdout_file = NULL;
+		p->array_command[p->num_commands]->stderr_file = NULL;
 
 		for(int i = 0; i < MSH_MAXARGS; i++) {
 			p->array_command[p->num_commands]->array_arg[i] = NULL;
@@ -207,19 +218,21 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		
 		//printf("command before parsed: %s\n", cmd);
 		err = msh_command_parse(cmd, p->array_command[p->num_commands]);
-		/*if (err != 0) {
+		if (err != 0) {
+			msh_command_free(p->array_command[p->num_commands]);
 			break;
-		}
-		*/
+			p->array_command[p->num_commands] = NULL;
 
+		}
+		
 		p->num_commands++;
     }
 	if(err != 0) {
 		free(pipe_cpy);
 		return err;
 	}
-	//p->array_command[p->num_commands] = NULL;
 
+	p->array_command[p->num_commands] = NULL;
 	p->array_command[p->num_commands - 1]->last_command = 1;
 	free(pipe_cpy);
 	return err;
@@ -235,17 +248,46 @@ msh_command_parse(char *cmd, struct msh_command *c) {
 	
 	for (arg = strtok_r(cmd_cpy, " ", &ptr); arg != NULL; arg = strtok_r(ptr, " ", &ptr)) 
 	{
-		if(c->num_args >= MSH_MAXARGS) {
+		if(strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0 || strcmp(arg, "2>") == 0 || strcmp(arg, "2>>") == 0) {
+			char* file = strtok_r(NULL, " ", &ptr);
+			if(file == NULL) {
+				err = MSH_ERR_NO_REDIR_FILE;
+				break;
+			}
+			if(strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0) {
+				if(c->stdout_file != NULL) {
+					err = MSH_ERR_MULT_REDIRECTIONS;
+					break;
+				}
+				c->stdout_file = strdup(file);
+				c->stdout_append = (!strcmp(arg, "1>>")) ? 1 : 0;
+			}
+			else {
+				if(c->stderr_file != NULL) {
+					err = MSH_ERR_MULT_REDIRECTIONS;
+					break;
+				}
+				c->stderr_file = strdup(file);
+				c->stderr_append = (!strcmp(arg, "2>>")) ? 1 : 0;
+			}
+
+			continue;
+		}
+
+		if (c->num_args >= MSH_MAXARGS - 1) {
 			err = MSH_ERR_TOO_MANY_ARGS;
 			break;
 		}
 
 		c->array_arg[c->num_args] = strdup(arg);
-		//printf("arg: %s\n", c->array_arg[c->num_args]);
+		if(!c->array_arg[c->num_args]) {
+			err = MSH_ERR_NOMEM;
+			break;
+		}
 		c->num_args++;
 
     }
-	//c->array_arg[c->num_args] = NULL;
+	c->array_arg[c->num_args] = NULL;
 
 	free(cmd_cpy);
 	return err;
@@ -291,9 +333,8 @@ msh_command_final(struct msh_command *c)
 void
 msh_command_file_outputs(struct msh_command *c, char **stdout, char **stderr)
 {
-	(void)c;
-	(void)stdout;
-	(void)stderr;
+	*stdout = c->stdout_file;
+	*stderr = c->stderr_file;
 }
 
 //first args
