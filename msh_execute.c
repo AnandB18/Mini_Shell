@@ -305,7 +305,7 @@ msh_execute(struct msh_pipeline *p) {
                 int status;
                 while(1) {
                     pid_t wait_pid = waitpid(pid, &status, 0);
-                    fprintf(stderr, "[dbg] waitpid returned=%d errno=%d is_fg_active=%d\n", (int)wait_pid, errno, is_fg_active);
+                    // fprintf(stderr, "[dbg] waitpid returned=%d errno=%d is_fg_active=%d\n", (int)wait_pid, errno, is_fg_active);
                     if (wait_pid == -1) {
                         if (errno == EINTR) {
     
@@ -402,7 +402,7 @@ msh_execute(struct msh_pipeline *p) {
                 	// Read from the previous pipe
                 	close(pipes[i-1][1]);  //TODO: close the write end of the previous pipe
                 	dup2(pipes[i-1][0], STDIN_FILENO);  //TODO: redirect stdin to read from the previous pipe
-                	close(pipes[1][0]);  //TODO: close the read end after redirection
+                	close(pipes[i-1][0]);  //TODO: close the read end after redirection
 
 					for (int j = 0; j < n - 1; j++) {
                     	if (j != i && j != i - 1) { 
@@ -483,9 +483,9 @@ sig_handler(int signal) {
         }
     }
     else if (signal == SIGTSTP) {
-        fprintf(stderr, "[dbg] SIGTSTP: is_fg_active=%d nprocs=%d\n", is_fg_active, foreground_job.nprocs);
+        // fprintf(stderr, "[dbg] SIGTSTP: is_fg_active=%d nprocs=%d\n", is_fg_active, foreground_job.nprocs);
         for (int i = 0; i < foreground_job.nprocs; i++) {
-            fprintf(stderr, "[dbg]   stop pid=%d\n", (int)foreground_job.pids[i]);
+            // fprintf(stderr, "[dbg]   stop pid=%d\n", (int)foreground_job.pids[i]);
         }
         for (int i = 0; i < foreground_job.nprocs; i++) {
             kill(foreground_job.pids[i], SIGTSTP);
@@ -501,9 +501,9 @@ sig_handler(int signal) {
         pid_t wait_pid = -1;
 
         while((wait_pid = waitpid(-1, &status, WNOHANG)) > 0) {
-            fprintf(stderr, "[dbg] SIGCHLD reaped pid=%d\n", (int)wait_pid);
+            // fprintf(stderr, "[dbg] SIGCHLD reaped pid=%d\n", (int)wait_pid);
             int idx = get_job_idx(wait_pid);
-            fprintf(stderr, "[dbg]   idx=%d\n", idx);
+            // fprintf(stderr, "[dbg]   idx=%d\n", idx);
             if (idx == -1) {
                 continue;
             }
