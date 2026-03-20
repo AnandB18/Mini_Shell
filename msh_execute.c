@@ -46,7 +46,6 @@ struct msh_pipeline {
 typedef enum{
     JOB_RUNNING,
     JOB_STOPPED,
-    JOB_TERMINATED
 } job_status_t;
 
 struct jobs {
@@ -137,7 +136,7 @@ msh_fg(int idx) {
 
     int status;
     while(1) {
-        pid_t wait_pid = waitpid(foreground_pid, &status, 0);
+        pid_t wait_pid = waitpid(-1, &status, WUNTRACED);
 
         if (wait_pid == -1) {
             if (errno == EINTR) {
@@ -214,91 +213,166 @@ msh_cd(struct msh_command *c) {
     return;
 }
 
-void
-msh_execute(struct msh_pipeline *p) {
-	struct msh_command *c = msh_pipeline_command(p,0);
-	
-    if (c == NULL || c->cmd_string == NULL || strlen(c->cmd_string) == 0) {
-        return;
+int
+parse_input_idx(int *index, struct msh_command *c) {
+    if(c->array_arg[1] != NULL) {
+        *index = atoi(c->array_arg[1]);
     }
-
-	if(strcmp(msh_command_program(c), "cd") == 0) {
+    else {
+        if (j_count > 0) {
+            *index = j_count - 1;
+        }
+        else {
+            return -1;
+        }
+    }
+    return 0;
+}
+int
+check_builtin(struct msh_command *c) {
+    if (strcmp(msh_command_program(c), "cd") == 0) {
         msh_cd(c);
-        return;
-	}
-	
-	if(strcmp(msh_command_program(c), "exit") == 0) {
-		exit(0);
-	}
-
-	if(strcmp(msh_command_program(c), "jobs") == 0) {
+        return 1;
+    }
+    if (strcmp(msh_command_program(c), "exit") == 0) {
+        exit(0);
+    }
+    if (strcmp(msh_command_program(c), "jobs") == 0) {
         if (c->array_arg[1] != NULL) {
             int index = atoi(c->array_arg[1]);
             if (index < 0 || index >= j_count) {
                 printf("jobs: %s: no such job\n", c->array_arg[1]);
-                return;
+                return 1;
             }
             msh_jobs(index);
         }
         else {
             msh_jobs(-1);
         }
-        return;
-	}
-
-	if(strcmp(msh_command_program(c), "fg") == 0) {
+        return 1;
+    }
+    if (strcmp(msh_command_program(c), "fg") == 0) {
         int index = -1;
-        if(c->array_arg[1] != NULL) {
-            index = atoi(c->array_arg[1]);
-        }
-		else {
-            if (j_count > 0) {
-                index = j_count - 1;
-            }
-            else {
-                return;
-            }
+        if(parse_input_idx(&index, c) == -1){
+            return 1;
         }
 		msh_fg(index);
-		return;
-	} 
-
-    if(strcmp(msh_command_program(c), "bg") == 0) {
+		return 1;
+    }
+    if (strcmp(msh_command_program(c), "bg") == 0) {
         int index = -1;
-        if(c->array_arg[1] != NULL) {
-            index = atoi(c->array_arg[1]);
-        }
-        else {
-            if (j_count > 0) {
-                index = j_count - 1;
-            }
-            else {
-                return;
-            }
+        if(parse_input_idx(&index, c) == -1){
+            return 1;
         }
         msh_bg(index);
-        return;
+        return 1;
     }
+    return 0;
+}
 
-    int n = p->num_commands;  // The number of processes 
-    int pipes[MSH_MAXCMNDS-1][2];  // Array of pipes to connect processes (for n processes, we need n-1 pipes)
-    pid_t pids[MSH_MAXCMNDS]; 
+int
+create_pipes(int pipes[][2], int num_cmds) {
+    for (int i = 0; i < num_cmds - 1; i++) {
+        if (pipe(pipes[i]) == -1) {
+            return -1;
+        }
+    }
+    return 0;
+}
 
-// Create the n-1 pipes for the processes 
-    if (n > 1) {
-        for (int i = 0; i < n - 1; i++) {
-            if (pipe(pipes[i]) == -1) {
-                perror("pipe failed");
+void
+close_pipes(int pipes[][2], int num_cmds) {
+    for (int i = 0; i < num_cmds - 1; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+    return;
+}
+
+void
+redirect_pipes(int i, int num_cmds, int pipes[][2]) {
+    if (i == 0) {
+        dup2(pipes[i][1], STDOUT_FILENO);
+        close(pipes[i][1]);
+        close(pipes[i][0]);
+    }
+    else if (i > 0 && i < num_cmds - 1) {
+        // Read from the previous pipe
+        close(pipes[i-1][1]);  // TODO: close the write end of the previous pipe
+        dup2(pipes[i-1][0], STDIN_FILENO);  // TODO: redirect stdin to read from the previous pipe
+        close(pipes[i-1][0]);  // TODO: close the read end of the previous pipe
+
+        // Write to the next pipe
+        close(pipes[i][0]);  // TODO: close the read end of the current pipe
+        dup2(pipes[i][1], STDOUT_FILENO);  //TODO: redirect stdout to write to the current pipe
+        close(pipes[i][1]);  // TODO: the write end of the current pipe
+    }
+    else {
+        // Read from the previous pipe
+        close(pipes[i-1][1]);  //TODO: close the write end of the previous pipe
+        dup2(pipes[i-1][0], STDIN_FILENO);  //TODO: redirect stdin to read from the previous pipe
+        close(pipes[i-1][0]);  //TODO: close the read end after redirection
+
+        for (int j = 0; j < num_cmds - 1; j++) {
+            if (j != i && j != i - 1) { 
+                close(pipes[j][0]);
+                close(pipes[j][1]);
             }
         }
     }
+}
 
-// Fork n child processes
-    for (int i = 0; i < n; i++) {
+int
+redirect_file_outputs(struct msh_command *cmd) {
+    char* outfile = NULL;
+    char* errfile = NULL;
+    int open_flags = 0;
+
+    msh_command_file_outputs(cmd, &outfile, &errfile);
+
+    if (outfile != NULL) {
+        if (cmd->stdout_append) {
+            open_flags = O_APPEND;
+        }
+        else {
+            open_flags = O_TRUNC;
+        }
+
+        int fd = open(outfile, O_WRONLY | O_CREAT | open_flags, 0666);
+        if (fd == -1) {
+            perror("open file redirection failed");
+            return -1;
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+    }
+
+    if (errfile != NULL) {
+        if (cmd->stderr_append) {
+            open_flags = O_APPEND;
+        }
+        else {
+            open_flags = O_TRUNC;
+        }
+
+        int fd = open(errfile, O_WRONLY | O_CREAT | open_flags, 0666);
+        if (fd == -1) {
+            perror("open file redirection failed");
+            return -1;
+        }
+        dup2(fd, STDERR_FILENO);
+        close(fd);
+    }
+    return 0;
+}
+
+int
+fork_and_exec(struct msh_pipeline *p, int num_cmds, int pipes[][2], pid_t pids[]) {
+    // Fork n child processes
+    for (int i = 0; i < num_cmds; i++) {
         pids[i] = fork();
-
         if (pids[i] == -1) {
-            perror("fork failed");
+            return -1;
         }
 
         if (pids[i] == 0) { 
@@ -306,141 +380,114 @@ msh_execute(struct msh_pipeline *p) {
             signal(SIGTSTP, SIG_DFL);
             signal(SIGCHLD, SIG_DFL);
 
-            if (n > 1) {
-                if (i == 0) {
-                    dup2(pipes[i][1], STDOUT_FILENO);
-                    close(pipes[i][1]);
-                    close(pipes[i][0]);
-                }
-                else if (i > 0 && i < n - 1) {
-                    // Read from the previous pipe
-                    close(pipes[i-1][1]);  // TODO: close the write end of the previous pipe
-                    dup2(pipes[i-1][0], STDIN_FILENO);  // TODO: redirect stdin to read from the previous pipe
-                    close(pipes[i-1][0]);  // TODO: close the read end of the previous pipe
-
-                    // Write to the next pipe
-                    close(pipes[i][0]);  // TODO: close the read end of the current pipe
-                    dup2(pipes[i][1], STDOUT_FILENO);  //TODO: redirect stdout to write to the current pipe
-                    close(pipes[i][1]);  // TODO: the write end of the current pipe
-                }
-                else {
-                    // Read from the previous pipe
-                    close(pipes[i-1][1]);  //TODO: close the write end of the previous pipe
-                    dup2(pipes[i-1][0], STDIN_FILENO);  //TODO: redirect stdin to read from the previous pipe
-                    close(pipes[i-1][0]);  //TODO: close the read end after redirection
-
-                    for (int j = 0; j < n - 1; j++) {
-                        if (j != i && j != i - 1) { 
-                            close(pipes[j][0]);
-                            close(pipes[j][1]);
-                        }
-                    }
-                }
+            if (num_cmds > 1) {
+                redirect_pipes(i, num_cmds, pipes);
             }
             
             struct msh_command *cmd = msh_pipeline_command(p, i);
-            
-            char* outfile = NULL;
-            char* errfile = NULL;
-            int flag = 0;
 
-            msh_command_file_outputs(cmd, &outfile, &errfile);
-
-            if (outfile != NULL) {
-                if (cmd->stdout_append) {
-                    flag = O_APPEND;
-                }
-                else {
-                    flag = O_TRUNC;
-                }
-
-                int fd = open(outfile, O_WRONLY | O_CREAT | flag, 0666);
-                if (fd == -1) {
-                    perror("open file redirection failed");
-                    exit(0);
-                }
-                dup2(fd, STDOUT_FILENO);
-                close(fd);
-            }
-
-            if (errfile != NULL) {
-                if (cmd->stderr_append) {
-                    flag = O_APPEND;
-                }
-                else {
-                    flag = O_TRUNC;
-                }
-
-                int fd = open(errfile, O_WRONLY | O_CREAT | flag, 0666);
-                if (fd == -1) {
-                    perror("open file redirection failed");
-                    exit(0);
-                }
-                dup2(fd, STDERR_FILENO);
-                close(fd);
+            if(redirect_file_outputs(cmd) != 0) {
+                exit(0);
             }
 
             execvp(msh_command_program(cmd), msh_command_args(cmd));
             exit(0);
         }
     }
+    return 0;
+}
 
-    if(n > 1) {
-        // Parent process: close all pipe ends
-        for (int i = 0; i < n - 1; i++) {
-            close(pipes[i][0]);
-            close(pipes[i][1]);
-        }
+void
+add_background_job(struct msh_pipeline *p, int num_cmds, pid_t pids[]) {
+    int idx = add_job(pids[num_cmds-1], msh_pipeline_input(p));
+    job_list[idx].status = JOB_RUNNING;
+    return;
+}
+
+void
+wait_foreground_job(struct msh_pipeline *p, int num_cmds, pid_t pids[]) {
+    foreground_job.nprocs = num_cmds;
+    for (int j = 0; j < num_cmds; j++) {
+        foreground_job.pids[j] = pids[j];
     }
+    is_fg_active = 1;
+    foreground_process = msh_pipeline_input(p);
+    
+    int fg_jobs_left = foreground_job.nprocs;
+    int status;
+    while(fg_jobs_left > 0) {
+        pid_t wait_pid = waitpid(-1, &status, WUNTRACED);
 
-    if (msh_pipeline_background(p)) {
-        int idx = add_job(pids[n-1], msh_pipeline_input(p));
-        job_list[idx].status = JOB_RUNNING;
-        return;
-    }
-    else {
-        foreground_job.nprocs = n;
-        for (int j = 0; j < n; j++) {
-            foreground_job.pids[j] = pids[j];
-        }
-        is_fg_active = 1;
-        foreground_process = msh_pipeline_input(p);
-        
-        int fg_jobs_left = foreground_job.nprocs;
-        int status;
-        while(fg_jobs_left > 0) {
-            pid_t wait_pid = waitpid(foreground_job.pids[0], &status, WUNTRACED);
+        if (wait_pid == -1) {
+            if (errno == EINTR) {
 
-            if (wait_pid == -1) {
-                if (errno == EINTR) {
-
-                    if (!is_fg_active) {
-                        break;
-                    }
-                    continue;
-                } 
-                else {
-                    perror("waitpid failed");
+                if (!is_fg_active) {
                     break;
                 }
+                continue;
+            } 
+            else {
+                perror("waitpid failed");
+                break;
             }
-            for (int i = 0; i < foreground_job.nprocs; i++) {
-                if (foreground_job.pids[i] == wait_pid) {
-                    foreground_job.pids[i] = -1;
-                    fg_jobs_left--;
-                    break;
-                }
+        }
+        for (int i = 0; i < foreground_job.nprocs; i++) {
+            if (foreground_job.pids[i] == wait_pid) {
+                foreground_job.pids[i] = -1;
+                fg_jobs_left--;
+                break;
             }
-        } 
-    }
+        }
+    } 
     is_fg_active = 0;
     foreground_process = NULL;
     foreground_pid = -1;
+    return;
+}
+
+void
+msh_execute(struct msh_pipeline *p) {
+	struct msh_command *first_cmd = msh_pipeline_command(p,0);
+    if (first_cmd == NULL || first_cmd->cmd_string == NULL || strlen(first_cmd->cmd_string) == 0) {
+        return;
+    }
+
+    if (check_builtin(first_cmd)) {
+        return;
+    }
+
+    int num_cmds = p->num_commands;  // The number of processes 
+    int pipes[MSH_MAXCMNDS-1][2];  // Array of pipes to connect processes (for n processes, we need n-1 pipes)
+    pid_t pids[MSH_MAXCMNDS]; 
+
+    // Create the n-1 pipes for the processes 
+    if (num_cmds > 1) {
+        if(create_pipes(pipes, num_cmds) == -1) {
+            perror("create pipes failed");
+            return;
+        }
+    }
+
+    if(fork_and_exec(p, num_cmds, pipes, pids) == -1) {
+        perror("fork and exec failed");
+        close_pipes(pipes, num_cmds);
+        return;
+    }
+
+    if(num_cmds > 1) {
+        close_pipes(pipes, num_cmds);
+    }
+
+    if (msh_pipeline_background(p)) {
+        add_background_job(p, num_cmds, pids);
+    }
+    else {
+        wait_foreground_job(p, num_cmds, pids);
+    }
 }
 
 void 
 sig_handler(int signal) {
-
     if (signal == SIGINT) {
         if (!is_fg_active) {
             return;
@@ -483,10 +530,7 @@ sig_handler(int signal) {
 }
 
 void
-msh_init(void)
-{
-    //pid_t shell_pgid = getpid();
-
+msh_init(void) {
 	struct sigaction sa; 
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_handler;
