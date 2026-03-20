@@ -19,11 +19,11 @@
  * environment variable, see `echo $PATH`), or a builtin command like
  * `cd`. Commands are passed arguments.
  */
-struct msh_command{
+ struct msh_command{
 	char* array_arg[MSH_MAXARGS];
 	int num_args;
-	char* cmd_string;  
 	int last_command;
+	char* cmd_string;  
 	int stdout_append;
 	int stderr_append;
 	char* stdout_file;
@@ -337,8 +337,49 @@ msh_execute(struct msh_pipeline *p) {
                     }
                 }
             }
-
+            
             struct msh_command *cmd = msh_pipeline_command(p, i);
+            
+            char* outfile = NULL;
+            char* errfile = NULL;
+            int flag = 0;
+
+            msh_command_file_outputs(cmd, &outfile, &errfile);
+
+            if (outfile != NULL) {
+                if (cmd->stdout_append) {
+                    flag = O_APPEND;
+                }
+                else {
+                    flag = O_TRUNC;
+                }
+
+                int fd = open(outfile, O_WRONLY | O_CREAT | flag, 0666);
+                if (fd == -1) {
+                    perror("open file redirection failed");
+                    exit(0);
+                }
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+
+            if (errfile != NULL) {
+                if (cmd->stderr_append) {
+                    flag = O_APPEND;
+                }
+                else {
+                    flag = O_TRUNC;
+                }
+
+                int fd = open(errfile, O_WRONLY | O_CREAT | flag, 0666);
+                if (fd == -1) {
+                    perror("open file redirection failed");
+                    exit(0);
+                }
+                dup2(fd, STDERR_FILENO);
+                close(fd);
+            }
+
             execvp(msh_command_program(cmd), msh_command_args(cmd));
             exit(0);
         }
