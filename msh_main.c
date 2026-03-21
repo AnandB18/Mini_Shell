@@ -24,7 +24,14 @@
 /* Trie of known command names for linenoise tab-completion (first token only). */
 static struct ptrie *autocompletion_trie = NULL;
 
-/* linenoise callback: suggest one completion when the user is still on the first word. */
+/**
+ * linenoise completion hook: offer at most one trie-based suggestion for the first token.
+ *
+ * Skips leading whitespace, ignores input once a second token has started, copies the prefix into a fixed buffer, and calls ptrie_autocomplete. Frees the trie-owned suggestion string after use.
+ *
+ * @param buf Current input line (borrowed).
+ * @param lc linenoise completion list to append to.
+ */
 void
 msh_completion_cb(const char *buf, linenoiseCompletions *lc) {
     if (autocompletion_trie == NULL || buf == NULL || lc == NULL) {
@@ -62,7 +69,12 @@ msh_completion_cb(const char *buf, linenoiseCompletions *lc) {
     free(suggestion);
 }
 
-/* Insert shell builtin names into the completion trie; returns 0 on success. */
+/**
+ * Register shell builtin names in the autocompletion trie.
+ *
+ * @param pt Trie to populate (must be non-NULL).
+ * @return 0 on success, -1 if any ptrie_add fails.
+ */
 int
 msh_ptrie_builtins(struct ptrie *pt) {
     if (pt == NULL) {
@@ -89,7 +101,12 @@ msh_ptrie_builtins(struct ptrie *pt) {
 	return 0;
 }
 
-/* Learn program names from a parsed pipeline so later lines can complete them. */
+/**
+ * Add each command's argv[0] from a pipeline into the trie for future completion.
+ *
+ * @param pt Destination trie.
+ * @param p Parsed pipeline (borrowed).
+ */
 static void
 msh_add_pipeline_ptrie(struct ptrie *pt, struct msh_pipeline *p) {
     if (pt == NULL || p == NULL) return;
@@ -105,7 +122,13 @@ msh_add_pipeline_ptrie(struct ptrie *pt, struct msh_pipeline *p) {
     }
 }
 
-/* Read one line of input; empty line after linenoise returns NULL (exit loop). Non-empty lines are added to history. */
+/**
+ * Read one interactive line via linenoise (prompt is configurable in-body).
+ *
+ * An empty string is freed and returned as NULL so the REPL exits per template rules. Non-empty lines are appended to linenoise history; caller must free non-NULL return values.
+ *
+ * @return Heap-allocated line, or NULL to signal exit.
+ */
 char *
 msh_input(void) {
 	char *line;
@@ -123,6 +146,13 @@ msh_input(void) {
 	return line;
 }
 
+/**
+ * Shell entry: validate argv, init linenoise history and signals, build completion trie and parse sequence, then run read/parse/execute until msh_input returns NULL.
+ *
+ * @param argc Expected 1 (no extra arguments).
+ * @param argv argv[0] is program name for usage text.
+ * @return EXIT_SUCCESS on normal exit, EXIT_FAILURE on init usage failure, or parser error code on msh_sequence_parse failure.
+ */
 int
 main(int argc, char *argv[]) {
 	struct msh_sequence *s;
