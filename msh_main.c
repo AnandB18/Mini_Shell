@@ -25,6 +25,36 @@
 static struct ptrie *autocompletion_trie = NULL;
 
 /**
+ * If @p buf has only a first command token (optional leading spaces, no second token yet),
+ * copy that token into @p prefix (nul-terminated, capacity @p cap) and return its length.
+ * Otherwise return -1.
+ */
+static int
+msh_first_token_prefix(const char *buf, char *prefix, size_t cap) {
+	size_t tok_len;
+
+	if (buf == NULL || prefix == NULL || cap == 0) {
+		return -1;
+	}
+	while (*buf == ' ' || *buf == '\t') {
+		buf++;
+	}
+	if (*buf == '\0') {
+		return -1;
+	}
+	tok_len = strcspn(buf, " \t");
+	if (buf[tok_len] != '\0') {
+		return -1;
+	}
+	if (tok_len >= cap) {
+		return -1;
+	}
+	memcpy(prefix, buf, tok_len);
+	prefix[tok_len] = '\0';
+	return (int)tok_len;
+}
+
+/**
  * linenoise completion hook: offer at most one trie-based suggestion for the first token.
  *
  * Skips leading whitespace, ignores input once a second token has started, copies the prefix into a fixed buffer, and calls ptrie_autocomplete. Frees the trie-owned suggestion string after use.
@@ -34,27 +64,17 @@ static struct ptrie *autocompletion_trie = NULL;
  */
 void
 msh_completion_cb(const char *buf, linenoiseCompletions *lc) {
-    if (autocompletion_trie == NULL || buf == NULL || lc == NULL) {
-        return;
-    }
-
-	/* skip leading spaces */
-	while (*buf == ' ' || *buf == '\t') buf++;
-
-	/* if empty after trimming, no suggestion */
-	if (*buf == '\0') return;
-
-	/* find first token length */
-	size_t tok_len = strcspn(buf, " \t");
-
-	/* if user already typed a second token, don't complete */
-	if (buf[tok_len] != '\0') return;
-
-	/* copy token prefix */
 	char prefix[256];
-	if (tok_len >= sizeof(prefix)) return;
-	memcpy(prefix, buf, tok_len);
-	prefix[tok_len] = '\0';
+	int tok_len;
+
+	if (autocompletion_trie == NULL || buf == NULL || lc == NULL) {
+		return;
+	}
+
+	tok_len = msh_first_token_prefix(buf, prefix, sizeof prefix);
+	if (tok_len < 0) {
+		return;
+	}
 
     char *suggestion = ptrie_autocomplete(autocompletion_trie, prefix);
     if (suggestion == NULL) {
@@ -67,6 +87,63 @@ msh_completion_cb(const char *buf, linenoiseCompletions *lc) {
     }
 
     free(suggestion);
+}
+
+/**
+ * linenoise hints hook: show the trie suffix after the typed first token (ghost text).
+ *
+ * Return value is heap-allocated; register linenoiseSetFreeHintsCallback(free).
+ * Sets @p color / @p bold for xterm foreground styling when a hint is shown.
+ *
+ * @param buf Current input line (borrowed).
+ * @param color Out: ANSI base color 31--37, or leave default if unused.
+ * @param bold Out: 1 for bold hint, 0 otherwise.
+ * @return strdup'd suffix after the prefix, or NULL.
+ */
+char *
+msh_hints_cb(const char *buf, int *color, int *bold) {
+	char prefix[256];
+	int tok_len;
+	char *suggestion;
+	const char *suffix;
+	char *hint;
+
+	if (autocompletion_trie == NULL || buf == NULL || color == NULL || bold == NULL) {
+		return NULL;
+	}
+
+	tok_len = msh_first_token_prefix(buf, prefix, sizeof prefix);
+	if (tok_len < 0) {
+		return NULL;
+	}
+
+	suggestion = ptrie_autocomplete(autocompletion_trie, prefix);
+	if (suggestion == NULL) {
+		return NULL;
+	}
+	if (strcmp(suggestion, prefix) == 0) {
+		free(suggestion);
+		return NULL;
+	}
+	if (strncmp(suggestion, prefix, (size_t)tok_len) != 0) {
+		free(suggestion);
+		return NULL;
+	}
+	suffix = suggestion + tok_len;
+	if (suffix[0] == '\0') {
+		free(suggestion);
+		return NULL;
+	}
+
+	hint = strdup(suffix);
+	free(suggestion);
+	if (hint == NULL) {
+		return NULL;
+	}
+
+	*color = 36;
+	*bold = 0;
+	return hint;
 }
 
 /**
@@ -176,6 +253,8 @@ main(int argc, char *argv[]) {
 	}
 
 	linenoiseSetCompletionCallback(msh_completion_cb);
+	linenoiseSetHintsCallback(msh_hints_cb);
+	linenoiseSetFreeHintsCallback(free);
 
 	if(msh_ptrie_builtins(autocompletion_trie) < 0) {
 		printf("MSH Error: Could not add builtins to autocompletion trie at initialization\n");
