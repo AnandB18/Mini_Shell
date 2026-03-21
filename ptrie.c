@@ -222,23 +222,24 @@ char *ptrie_autocomplete(struct ptrie *pt, const char *str) {
     //printf("This is the length: %d\n", length);
 
     for (int i = 0; i < length; i++) {
-        symbol = (int)str[i];
-
-        if (symbol < 32) {
-            //printf("this is the word: %s\n ", strdup(str));
-            return strdup(str);
+        symbol = (unsigned char)str[i];
+        if (symbol < 32) return strdup(str);
+        /* First handle "we are at last character of prefix" */
+        if (i == length - 1) {
+            if (iterator->character[symbol].count > 0 && iterator->character[symbol].count == iterator->character[symbol].max_count) {
+                return strdup(iterator->character[symbol].word);
+            }
+            /* If no deeper trie, nothing better exists */
+            if (iterator->character[symbol].next == NULL) {
+                return strdup(str);
+            }
+            iterator = iterator->character[symbol].next;
+            break;
         }
-        
+        /* non-last char must have next */
         if (iterator->character[symbol].next == NULL) {
-            //printf("this is the word: %s\n ", strdup(str));
             return strdup(str);
         }
-        if (i == (length - 1) && iterator->character[symbol].count == iterator->character[symbol].max_count) {
-            //printf("this is the index of the returned word: %d\n", symbol);
-            //printf("this is the word returned is: %s\n ", iterator->character[symbol].word);
-            return strdup(iterator->character[symbol].word);
-        }
-        
         iterator = iterator->character[symbol].next;
     }
     
