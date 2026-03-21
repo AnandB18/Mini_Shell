@@ -211,7 +211,7 @@ msh_input(void) {
 	char *line;
 
 	/* You can change this displayed string to whatever you'd like ;-) */
-	line = linenoise("Anand's Shell> ");
+	line = linenoise("\033[35mAnand's Shell> \033[0m");
 	if (line && strlen(line) == 0) {
 		
 		free(line);
