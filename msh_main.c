@@ -1,3 +1,15 @@
+/*
+ * msh_main.c
+ *
+ * Program entry and interactive REPL: read a line with linenoise, parse into
+ * an msh_sequence, dequeue each msh_pipeline and run msh_execute, then free.
+ * Also seeds a prefix trie with shell builtins and program names seen in
+ * parsed lines so the first token can be tab-completed. Signal setup for the
+ * shell happens in msh_init() (see msh_execute.c). Some control flow and
+ * hooks here follow the course-provided template; behavior such as "empty
+ * line exits" is intentional.
+ */
+
 #include <msh.h>
 #include <msh_parse.h>
 
@@ -9,11 +21,12 @@
 
 #include <linenoise.h>
 
+/* Trie of known command names for linenoise tab-completion (first token only). */
 static struct ptrie *autocompletion_trie = NULL;
 
+/* linenoise callback: suggest one completion when the user is still on the first word. */
 void
-msh_completion_cb(const char *buf, linenoiseCompletions *lc)
-{
+msh_completion_cb(const char *buf, linenoiseCompletions *lc) {
     if (autocompletion_trie == NULL || buf == NULL || lc == NULL) {
         return;
     }
@@ -49,9 +62,9 @@ msh_completion_cb(const char *buf, linenoiseCompletions *lc)
     free(suggestion);
 }
 
+/* Insert shell builtin names into the completion trie; returns 0 on success. */
 int
-msh_ptrie_builtins(struct ptrie *pt)
-{
+msh_ptrie_builtins(struct ptrie *pt) {
     if (pt == NULL) {
         return -1;
     }
@@ -76,9 +89,9 @@ msh_ptrie_builtins(struct ptrie *pt)
 	return 0;
 }
 
+/* Learn program names from a parsed pipeline so later lines can complete them. */
 static void
-msh_add_pipeline_ptrie(struct ptrie *pt, struct msh_pipeline *p)
-{
+msh_add_pipeline_ptrie(struct ptrie *pt, struct msh_pipeline *p) {
     if (pt == NULL || p == NULL) return;
 
     for (size_t i = 0; ; i++) {
@@ -92,9 +105,9 @@ msh_add_pipeline_ptrie(struct ptrie *pt, struct msh_pipeline *p)
     }
 }
 
+/* Read one line of input; empty line after linenoise returns NULL (exit loop). Non-empty lines are added to history. */
 char *
-msh_input(void)
-{
+msh_input(void) {
 	char *line;
 
 	/* You can change this displayed string to whatever you'd like ;-) */
@@ -111,23 +124,21 @@ msh_input(void)
 }
 
 int
-main(int argc, char *argv[])
-{
+main(int argc, char *argv[]) {
 	struct msh_sequence *s;
 
+	/* No script mode: this binary is interactive only. */
 	if (argc > 1) {
 		fprintf(stderr, "Usage: %s\n", argv[0]);
 
 		return EXIT_FAILURE;
 	}
-	/*
-	 * See `ln/README.markdown` for linenoise usage. If you don't
-	 * see the `ln` directory, do a `make`.
-	 */
+	/* See ln/README.markdown for linenoise; run make if ln/ is missing. */
 	linenoiseHistorySetMaxLen(1<<16);
 
 	msh_init();
 
+	/* Completion trie: builtins first, then names from commands user runs. */
 	autocompletion_trie = ptrie_allocate();
 	if (autocompletion_trie == NULL) {
 		printf("MSH Error: Could not allocate autocompletion trie at initialization\n");
@@ -142,6 +153,7 @@ main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	/* Reused for each user line; pipelines are drained before the next read. */
 	s = msh_sequence_alloc();
 	if (s == NULL) {
 		printf("MSH Error: Could not allocate msh sequence at initialization\n");
@@ -149,7 +161,7 @@ main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	/* Lets keep getting inputs! */
+	/* Template REPL: msh_input NULL (e.g. empty line) breaks and exits cleanly. */
 	while (1) {
 		char *str;
 		struct msh_pipeline *p;
@@ -161,6 +173,7 @@ main(int argc, char *argv[])
 			break;
 		}  /* you must maintain this behavior: an empty command exits */
 
+		/* str is consumed; on error the process exits with parser error code. */
 		err = msh_sequence_parse(str, s);
 		if (err != 0) {
 			printf("MSH Error: %s\n", msh_pipeline_err2str(err));
@@ -177,6 +190,7 @@ main(int argc, char *argv[])
 		free(str);
 	}
 
+	/* Normal exit path after break from msh_input returning NULL. */
 	msh_sequence_free(s);
 	ptrie_free(autocompletion_trie);
 	return 0;
