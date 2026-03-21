@@ -10,10 +10,6 @@
 #include <fcntl.h>
 #include <signal.h>
 
-
-//#define MAX_PROCESSES 128
-// #define WCONTINUED __W_CONTINUED
-
 /**
  * Each command corresponds to either a program (in the `PATH`
  * environment variable, see `echo $PATH`), or a builtin command like
@@ -136,7 +132,7 @@ msh_fg(int idx) {
 
     int status;
     while(1) {
-        pid_t wait_pid = waitpid(-1, &status, WUNTRACED);
+        pid_t wait_pid = waitpid(foreground_pid, &status, WUNTRACED);
 
         if (wait_pid == -1) {
             if (errno == EINTR) {
@@ -416,7 +412,7 @@ wait_foreground_job(struct msh_pipeline *p, int num_cmds, pid_t pids[]) {
     int fg_jobs_left = foreground_job.nprocs;
     int status;
     while(fg_jobs_left > 0) {
-        pid_t wait_pid = waitpid(-1, &status, WUNTRACED);
+        pid_t wait_pid = waitpid(foreground_job.pids[0], &status, WUNTRACED);
 
         if (wait_pid == -1) {
             if (errno == EINTR) {
