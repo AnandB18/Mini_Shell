@@ -62,8 +62,8 @@ libmshparse.a: $(LIBOBJS)
 
 prebin: libmshparse.a libln.a $(BIN)
 
-$(BIN): $(OBJECT)
-	$(LD) -o $@ $^ $(LDFLAGS)
+$(BIN): $(OBJECT) $(LIBS)
+	$(LD) -o $@ $(OBJECT) $(LDFLAGS)
 
 test: all $(UTIL)
 	@echo "Running tests..."
