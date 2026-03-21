@@ -660,8 +660,7 @@ void
 msh_execute(struct msh_pipeline *p) {
 	struct msh_command *first_cmd = msh_pipeline_command(p, 0);
 
-	if (first_cmd == NULL || first_cmd->cmd_string == NULL ||
-	    strlen(first_cmd->cmd_string) == 0) {
+	if (first_cmd == NULL || first_cmd->cmd_string == NULL || strlen(first_cmd->cmd_string) == 0) {
 		return;
 	}
 

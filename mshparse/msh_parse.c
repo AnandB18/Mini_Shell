@@ -1,3 +1,18 @@
+/*
+ * msh_parse.c
+ *
+ * Turns raw user input into `msh_sequence` -> `msh_pipeline` -> `msh_command`
+ * trees. Responsibilities here: split on `;` and `|`, detect trailing `&`,
+ * tokenize arguments, and parse `1>`, `1>>`, `2>`, `2>>` redirections.
+ *
+ * Public API contracts and per-function documentation live in msh_parse.h.
+ * This file only adds module-level context and implementation notes.
+ *
+ * Memory: all strings reachable from a sequence are heap-allocated (strdup);
+ * use msh_sequence_free / msh_pipeline_free / msh_command_free or the
+ * sequence dequeue path documented in the header.
+ */
+
 #include <msh_parse.h>
 #include <stdio.h>
 #include <string.h>
@@ -5,48 +20,38 @@
 #include <ctype.h>
 #include <fcntl.h>
 
+/* ------------------------------------------------------------------------- */
+/* Internal AST shapes (must stay consistent with msh_execute expectations)   */
+/* ------------------------------------------------------------------------- */
 
-/**
- * Each command corresponds to either a program (in the `PATH`
- * environment variable, see `echo $PATH`), or a builtin command like
- * `cd`. Commands are passed arguments.
- */
-struct msh_command{
-	char* array_arg[MSH_MAXARGS];
+struct msh_command {
+	char *array_arg[MSH_MAXARGS];
 	int num_args;
 	int last_command;
-	char* cmd_string;  
+	char *cmd_string;
 	int stdout_append;
 	int stderr_append;
-	char* stdout_file;
-	char* stderr_file;	
+	char *stdout_file;
+	char *stderr_file;
 };
 
-/**
- * A pipeline is a sequence of commands, separated by "|"s. The output
- * of a preceding command (before the "|") gets passed to the input of
- * the next (after the "|").
- */
 struct msh_pipeline {
-	struct msh_command* array_command[MSH_MAXCMNDS];
-	char* pipeline;
+	struct msh_command *array_command[MSH_MAXCMNDS];
+	char *pipeline;
 	int num_commands;
 	int background;
-    pid_t pgid;
+	pid_t pgid;
 };
 
-/**
- * A sequence of pipelines. Pipelines are separated by ";"s, enabling
- * a sequence to define a sequence of pipelines that execute one after
- * the other. A pipeline can run in the background, which enables us
- * to move on an execute the next pipeline.
- */
 struct msh_sequence {
-	struct msh_pipeline** pipe_array;  
+	struct msh_pipeline **pipe_array;
 	int num_pipelines;
-	char* sequence;
-
+	char *sequence;
 };
+
+/* ------------------------------------------------------------------------- */
+/* Destructors                                                                */
+/* ------------------------------------------------------------------------- */
 
 void
 msh_command_free(struct msh_command *c)
@@ -83,6 +88,10 @@ msh_sequence_free(struct msh_sequence *s)
 	free(s);
 }
 
+/* ------------------------------------------------------------------------- */
+/* Allocation                                                                 */
+/* ------------------------------------------------------------------------- */
+
 struct msh_sequence *
 msh_sequence_alloc(void)
 {
@@ -98,6 +107,10 @@ msh_sequence_alloc(void)
 	return seq;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Parsing: sequence (;) -> pipeline (|) -> command (tokens + redirection)   */
+/* ------------------------------------------------------------------------- */
+
 char *
 msh_pipeline_input(struct msh_pipeline *p)
 {
@@ -108,73 +121,64 @@ msh_err_t
 msh_sequence_parse(char *str, struct msh_sequence *seq)
 {
 	msh_err_t err = 0;
-	if(strlen(str) != 0) {
+
+	/* Count ';' separators: N semicolons => N+1 pipeline segments */
+	if (strlen(str) != 0) {
 		seq->num_pipelines = 1;
 		for (int i = 0; i < (int)strlen(str); i++) {
-			if(str[i] == ';') {
+			if (str[i] == ';') {
 				seq->num_pipelines++;
 			}
-		}	
+		}
 	}
 
 	seq->pipe_array = (struct msh_pipeline**)malloc((seq->num_pipelines) * sizeof(struct msh_pipeline *));
 	seq->sequence = strdup(str);
 
-	//printf("sequence: %s\n", seq->sequence);
-	//printf("sequence parameter: %s\n", str);
-
-	char* str_cpy = strdup(str);
+	char *str_cpy = strdup(str);
 	char *pipe, *ptr;
-
-	
 	int i = 0;
-    for (pipe = strtok_r(str_cpy, ";", &ptr); pipe != NULL; pipe = strtok_r(ptr, ";", &ptr))
-	{
-		seq->pipe_array[i] = (struct msh_pipeline*)malloc(sizeof(struct msh_pipeline));
+
+	for (pipe = strtok_r(str_cpy, ";", &ptr); pipe != NULL; pipe = strtok_r(NULL, ";", &ptr)) {
+		seq->pipe_array[i] = (struct msh_pipeline *)malloc(sizeof(struct msh_pipeline));
 		seq->pipe_array[i]->pipeline = strdup(pipe);
 		seq->pipe_array[i]->num_commands = 0;
 		seq->pipe_array[i]->background = 0;
 
-		//printf("pipe before parsed: %s\n", pipe);
 		err = msh_pipeline_parse(pipe, seq->pipe_array[i]);
-		
-		/*if (err != 0) {
-			break;
-		}
-		*/
 		i++;
 	}
-	
+
 	free(str_cpy);
 	return err;
 }
 
-msh_err_t 
-msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
+msh_err_t
+msh_pipeline_parse(char *pipe, struct msh_pipeline *p) {
 	msh_err_t err = 0;
 	int start = 0;
-	int end = strlen(pipe) - 1;
-		 
-	//printf("pipeline: %s\n", p->pipeline);
-	//printf("pipeline parameter: %s\n", pipe);
+	int end = (int)strlen(pipe) - 1;
 
-	while(isspace(pipe[start]) != 0) {
+	/* Trim leading whitespace; leading '|' means missing left-hand command */
+	while (isspace((unsigned char)pipe[start]) != 0) {
 		start++;
 	}
-	if(pipe[start] == '|') {
+	if (pipe[start] == '|') {
 		err = MSH_ERR_PIPE_MISSING_CMD;
 		return err;
 	}
-	
-	while(isspace(pipe[end]) != 0) {
+
+	/* Trim trailing whitespace; optional trailing '&' => background */
+	while (isspace((unsigned char)pipe[end]) != 0) {
 		end--;
 	}
-	if(pipe[end] == '&') {
+	if (pipe[end] == '&') {
 		p->background = 1;
-		end--; 
-		while(isspace(pipe[end]) != 0) {
+		end--;
+		while (isspace((unsigned char)pipe[end]) != 0) {
 			end--;
 		}
+		/* Strip '&' from mutable buffer and refresh p->pipeline copy */
 		int i = 0;
 		while (start <= end) {
 			pipe[i] = pipe[start];
@@ -182,28 +186,26 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 			start++;
 		}
 		pipe[i] = '\0';
-		//printf("This is the pipe in parse: %s\n", pipe);
 		free(p->pipeline);
 		p->pipeline = strdup(pipe);
 	}
 
-	if(pipe[end] == '|') {
+	/* Trailing '|' after optional & strip => missing right-hand command */
+	if (pipe[end] == '|') {
 		err = MSH_ERR_PIPE_MISSING_CMD;
 		return err;
 	}
 
-	char* pipe_cpy = strdup(pipe);
+	char *pipe_cpy = strdup(pipe);
 	char *cmd, *ptr;
-	
-    for (cmd = strtok_r(pipe_cpy, "|", &ptr); cmd != NULL; cmd = strtok_r(ptr, "|", &ptr))
-    {
-		if(p->num_commands >= MSH_MAXCMNDS) {
+
+	for (cmd = strtok_r(pipe_cpy, "|", &ptr); cmd != NULL; cmd = strtok_r(NULL, "|", &ptr)) {
+		if (p->num_commands >= MSH_MAXCMNDS) {
 			err = MSH_ERR_TOO_MANY_CMDS;
 			break;
-			//return -7;
 		}
-		
-		p->array_command[p->num_commands] = (struct msh_command*)malloc(sizeof(struct msh_command));
+
+		p->array_command[p->num_commands] = (struct msh_command *)malloc(sizeof(struct msh_command));
 		p->array_command[p->num_commands]->cmd_string = strdup(cmd);
 		p->array_command[p->num_commands]->last_command = 0;
 		p->array_command[p->num_commands]->num_args = 0;
@@ -212,22 +214,19 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 		p->array_command[p->num_commands]->stdout_file = NULL;
 		p->array_command[p->num_commands]->stderr_file = NULL;
 
-		for(int i = 0; i < MSH_MAXARGS; i++) {
+		for (int i = 0; i < MSH_MAXARGS; i++) {
 			p->array_command[p->num_commands]->array_arg[i] = NULL;
 		}
-		
-		//printf("command before parsed: %s\n", cmd);
+
 		err = msh_command_parse(cmd, p->array_command[p->num_commands]);
 		if (err != 0) {
 			msh_command_free(p->array_command[p->num_commands]);
 			break;
-			p->array_command[p->num_commands] = NULL;
-
 		}
-		
+
 		p->num_commands++;
-    }
-	if(err != 0) {
+	}
+	if (err != 0) {
 		free(pipe_cpy);
 		return err;
 	}
@@ -238,32 +237,30 @@ msh_pipeline_parse(char *pipe, struct msh_pipeline *p){
 	return err;
 }
 
-msh_err_t 
-msh_command_parse(char *cmd, struct msh_command *c) {
-	//printf("command: %s\n", c->cmd_string);
-	//printf("command parameter: %s\n", cmd);
+msh_err_t
+msh_command_parse(char *cmd, struct msh_command *c)
+{
 	int err = 0;
-	char* cmd_cpy = strdup(cmd);
+	char *cmd_cpy = strdup(cmd);
 	char *arg, *ptr;
-	
-	for (arg = strtok_r(cmd_cpy, " ", &ptr); arg != NULL; arg = strtok_r(ptr, " ", &ptr)) 
-	{
-		if(strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0 || strcmp(arg, "2>") == 0 || strcmp(arg, "2>>") == 0) {
-			char* file = strtok_r(NULL, " ", &ptr);
-			if(file == NULL) {
+
+	/* Space-separated tokens; redir ops take the next token as path; argv gets the rest; leave one slot for NULL terminator in array_arg. */
+	for (arg = strtok_r(cmd_cpy, " ", &ptr); arg != NULL; arg = strtok_r(NULL, " ", &ptr)) {
+		if (strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0 || strcmp(arg, "2>") == 0 || strcmp(arg, "2>>") == 0) {
+			char *file = strtok_r(NULL, " ", &ptr);
+			if (file == NULL) {
 				err = MSH_ERR_NO_REDIR_FILE;
 				break;
 			}
-			if(strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0) {
-				if(c->stdout_file != NULL) {
+			if (strcmp(arg, "1>") == 0 || strcmp(arg, "1>>") == 0) {
+				if (c->stdout_file != NULL) {
 					err = MSH_ERR_MULT_REDIRECTIONS;
 					break;
 				}
 				c->stdout_file = strdup(file);
 				c->stdout_append = (!strcmp(arg, "1>>")) ? 1 : 0;
-			}
-			else {
-				if(c->stderr_file != NULL) {
+			} else {
+				if (c->stderr_file != NULL) {
 					err = MSH_ERR_MULT_REDIRECTIONS;
 					break;
 				}
@@ -280,33 +277,37 @@ msh_command_parse(char *cmd, struct msh_command *c) {
 		}
 
 		c->array_arg[c->num_args] = strdup(arg);
-		if(!c->array_arg[c->num_args]) {
+		if (!c->array_arg[c->num_args]) {
 			err = MSH_ERR_NOMEM;
 			break;
 		}
 		c->num_args++;
-
-    }
+	}
 	c->array_arg[c->num_args] = NULL;
 
 	free(cmd_cpy);
 	return err;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Accessors and optional command user-data hooks (see msh_parse.h)           */
+/* ------------------------------------------------------------------------- */
+
 struct msh_pipeline *
 msh_sequence_pipeline(struct msh_sequence *s)
 {
-	if(s->num_pipelines == 0) {
+	if (s->num_pipelines == 0) {
 		return NULL;
 	}
-	struct msh_pipeline* p = s->pipe_array[0];
-	
-	for(int i = 0; i < s->num_pipelines - 1; i++) {
+	struct msh_pipeline *p = s->pipe_array[0];
+
+	/* Shift remaining pointers down — simple queue dequeue */
+	for (int i = 0; i < s->num_pipelines - 1; i++) {
 		s->pipe_array[i] = s->pipe_array[i + 1];
 	}
 
 	s->num_pipelines--;
-	
+
 	return p;
 }
 
@@ -328,8 +329,6 @@ msh_command_final(struct msh_command *c)
 	return c->last_command;
 }
 
-
-//Don't Do
 void
 msh_command_file_outputs(struct msh_command *c, char **stdout, char **stderr)
 {
@@ -337,7 +336,6 @@ msh_command_file_outputs(struct msh_command *c, char **stdout, char **stderr)
 	*stderr = c->stderr_file;
 }
 
-//first args
 char *
 msh_command_program(struct msh_command *c)
 {
@@ -347,11 +345,10 @@ msh_command_program(struct msh_command *c)
 char **
 msh_command_args(struct msh_command *c)
 {
-	return c->array_arg; //c->args
+	return c->array_arg;
 }
 
-
-//Don't Do
+/* Assignment API stubs: shell does not attach per-command client data. */
 void
 msh_command_putdata(struct msh_command *c, void *data, msh_free_data_fn_t fn)
 {
@@ -360,7 +357,6 @@ msh_command_putdata(struct msh_command *c, void *data, msh_free_data_fn_t fn)
 	(void)fn;
 }
 
-//don't do
 void *
 msh_command_getdata(struct msh_command *c)
 {
