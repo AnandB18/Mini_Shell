@@ -1,0 +1,9 @@
+#
+# Normalize line endings to LF so POSIX tools (shell scripts/test inputs)
+# behave consistently across Windows/WSL clones.
+#
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.txt text eol=lf
+
