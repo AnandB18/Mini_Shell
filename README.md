@@ -4,6 +4,13 @@ A small Unix shell written in C: it reads lines interactively, parses **command 
 
 ---
 
+## Run it yourself
+```bash
+git clone
+make
+./msh
+```
+
 ## Design & scope
 
 **What a shell does (conceptually).** The shell sits in a loop: read a line of input, turn it into structured commands, then **execute** them. Execution means creating **child processes** with **`fork`**, replacing them with programs via **`exec`**, wiring **`stdin`/`stdout`/`stderr`** together with **pipes** and **file descriptors**, and **`wait`** ing (or not) depending on whether the pipeline is **foreground** or **background**. The shell process itself must stay alive to run **built-ins** (e.g. change directory) and to keep **job state** and **signal handlers** in one place.
